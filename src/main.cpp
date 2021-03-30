@@ -2,6 +2,7 @@
 #include <chrono>
 #include <iostream>
 #include <vector>
+#include <locale>
 #include <string>
 #include "omp.h"
 #include "./BTreeOLC/BTreeOLC.h"
@@ -55,7 +56,7 @@ template<typename K, typename V, template <typename, typename> class T>
 double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
 	auto start = std::chrono::high_resolution_clock::now();
 	// run in parallel with omp
-	#pragma omp parallel for schedule(dynamic)
+	#pragma omp parallel for schedule(static, 100)
 	for (size_t i = 0; i < ops.size(); i++) {
 		const Operation &op = ops[i];
 		const long k = op.get_key();
@@ -71,9 +72,9 @@ double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
 		};
 	}
     auto finish = std::chrono::high_resolution_clock::now();
-	auto s = std::chrono::duration_cast<std::chrono::seconds>(finish-start).count();
-	std::cerr << "total time : " << s << '\n';
-	return ops.size() / s;
+	auto s = std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start).count();
+	std::cerr << "total time : " << s << " nanoseconds\n";
+	return ops.size() * 1000000000 / s;
 }
 
 int main(int argc, char **argv) {
@@ -81,7 +82,10 @@ int main(int argc, char **argv) {
 		std::cerr << "usage <workload file>";
 		return 1;
 	}
-
+	// show commas
+	std::cout.imbue(std::locale(""));
+	std::cerr.imbue(std::locale(""));
+	
 	std::string fname = argv[1];
 	auto workload = read_workload(fname);
 
@@ -90,7 +94,7 @@ int main(int argc, char **argv) {
 	btreeolc::BTree<long, long> tree {};
 	
 	const double ops = execute_workload(tree, workload);
-	std::cout << "ops per second "<< ops;
+	std::cout << "ops per second : "<< (long)ops << '\n';
 
 	return 0;
 }
