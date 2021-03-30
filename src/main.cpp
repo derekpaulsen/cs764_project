@@ -17,6 +17,8 @@ class Operation {
 	private:
 		long op_type, key;
 
+
+	public:
 		Operation(const std::string &op, long key) : key(key) {
 			if (op == "INSERT"s) 
 				op_type = INSERT;
@@ -26,7 +28,6 @@ class Operation {
 				throw std::runtime_error("Unknown op type "s + op);
 		}
 
-	public:
 		long get_op_type() const {
 			return op_type;
 		}
@@ -71,6 +72,7 @@ double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
 	}
     auto finish = std::chrono::high_resolution_clock::now();
 	auto s = std::chrono::duration_cast<std::chrono::seconds>(finish-start).count();
+	std::cerr << "total time : " << s << '\n';
 	return ops.size() / s;
 }
 
@@ -82,10 +84,13 @@ int main(int argc, char **argv) {
 
 	std::string fname = argv[1];
 	auto workload = read_workload(fname);
+
+	std::cerr << "number of ops in workload : " << workload.size() << '\n';
 	
 	btreeolc::BTree<long, long> tree {};
 	
-	execute_workload(tree, workload);
+	const double ops = execute_workload(tree, workload);
+	std::cout << "ops per second "<< ops;
 
 	return 0;
 }
