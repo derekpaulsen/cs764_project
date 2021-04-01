@@ -1,10 +1,11 @@
 .PHONY: workload test clean
 
-CXX = g++ -std=c++17 -O3 -Wno-invalid-offsetof -mcx16 -DNDEBUG
+CXX = g++-8 -std=c++2a -O3 -Wno-invalid-offsetof -mcx16 -DNDEBUG
 LIBS =  -latomic -fopenmp -lpthread #-ltcmalloc_minimal
 
 
 test: vanilla
+	@echo "number of threads = $(OMP_NUM_THREADS)"
 	./vanilla ./workload/seq_insert.txt
 
 vanilla: main.cpp

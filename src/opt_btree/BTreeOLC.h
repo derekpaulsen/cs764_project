@@ -5,6 +5,8 @@
 #include <atomic>
 #include <immintrin.h>
 #include <sched.h>
+#include <algorithm>
+#include <optional>
 
 namespace btreeolc {
 
@@ -152,6 +154,46 @@ struct BTreeLeaf : public BTreeLeafBase {
       sep = keys[count-1];
       return newLeaf;
    }
+
+   void sort_and_dedupe() {
+		int indexes[count];
+		Payload temp_payloads[count];
+		Key temp_keys[count];
+		
+		std::copy(temp_payloads, temp_payloads+count, payloads);
+		std::copy(temp_keys, temp_keys+count, keys);
+
+	   for (int i=0; i < count; i++) {
+		   indexes[i] = i;
+		}
+		// stable sort to take the last insert
+		std::stable_sort(indexes, indexes + count,
+			   [this] (const int a, const int b) { return keys[a] < keys[b]; }
+		);
+
+		// unique copy, taking the last value in the group
+		int current_pos = 0;
+		int actual_count = count;
+		for (int i=0; i < count-1; ++i) {
+			if (temp_keys[i] != temp_keys[i+1]) {
+				keys[current_pos] = temp_keys[i];
+				payloads[current_pos] = temp_payloads[i];
+				++current_pos;
+				++actual_count;
+			} 
+		}
+		keys[current_pos] = temp_keys[count-1];
+		payloads[current_pos] = temp_payloads[count-1];
+	   
+	}
+
+   std::optional<Payload> search_unsorted(Key key) {
+	   for (int i = 0; i < count; i++) {
+		   if (keys[i] == key)
+			   return std::optional<Payload>(payloads[i]);
+		}
+	   return std::optional<Payload>();
+	}
 };
 
 struct BTreeInnerBase : public NodeBase {

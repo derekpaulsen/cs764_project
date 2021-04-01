@@ -5,7 +5,8 @@
 #include <locale>
 #include <string>
 #include "omp.h"
-#include "./BTreeOLC/BTreeOLC.h"
+#include "./opt_btree/BTreeOLC.h"
+#include "./opt_btree/BufferBTree.h"
 
 using namespace std::string_literals;
 
@@ -53,6 +54,36 @@ std::vector<Operation> read_workload(const std::string &fname) {
 }
 
 template<typename K, typename V, template <typename, typename> class T>
+bool verify(T<K,V> &tree, const std::vector<Operation> &ops) {
+	K result;
+	bool passed = true;
+	// run in parallel with omp
+	for (const auto &op : ops) {
+		const long k = op.get_key();
+		long v;
+
+		switch (op.get_op_type()) {
+			case Operation::INSERT:
+				if (!tree.lookup(k, result)) {
+					std::cerr << "Key missing : " << k << '\n';
+					break;
+				}
+				if (result != k) {
+					std::cerr << "Unexpected value from lookup : {key = " << k
+							<< ", value = " << result << "}\n";
+					passed = false;
+				}
+				break;
+		};
+
+		if (!passed)
+			break;
+	}
+	return passed;
+}
+
+
+template<typename K, typename V, template <typename, typename> class T>
 double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
 	auto start = std::chrono::high_resolution_clock::now();
 	// run in parallel with omp
@@ -74,6 +105,14 @@ double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
     auto finish = std::chrono::high_resolution_clock::now();
 	auto s = std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start).count();
 	std::cerr << "total time : " << s << " nanoseconds\n";
+
+	std::cerr << "Verifying results...";
+	bool pass = verify(tree, ops);
+	if (pass)
+		std::cerr << "ok\n";
+	else
+		std::cerr << "FAILED\n";
+
 	return ops.size() * 1000000000 / s;
 }
 
@@ -88,13 +127,20 @@ int main(int argc, char **argv) {
 	
 	std::string fname = argv[1];
 	auto workload = read_workload(fname);
-
+	
 	std::cerr << "number of ops in workload : " << workload.size() << '\n';
 	
+	std::cerr << "running baseline\n";
 	btreeolc::BTree<long, long> tree {};
 	
-	const double ops = execute_workload(tree, workload);
-	std::cout << "ops per second : "<< (long)ops << '\n';
+	double ops = execute_workload(tree, workload);
+	std::cerr << "ops per second : "<< (long)ops << "\n\n";
+
+
+	BufferedBTree<long, long> buffered_tree {};
+	
+	ops = execute_workload(tree, workload);
+	std::cout << "ops per second : "<< (long)ops << "\n\n";
 
 	return 0;
 }
