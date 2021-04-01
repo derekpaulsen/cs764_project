@@ -153,10 +153,6 @@ struct BTreeLeaf : public BTreeLeafBase {
       return newLeaf;
    }
 
-  void insert_unordered(Key k,Payload p, size_t pos) {
-	keys[pos] = k;
-	payloads[pos] = p;
-  }
 };
 
 struct BTreeInnerBase : public NodeBase {

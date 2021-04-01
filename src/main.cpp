@@ -57,7 +57,6 @@ template<typename K, typename V, template <typename, typename> class T>
 bool verify(T<K,V> &tree, const std::vector<Operation> &ops) {
 	K result;
 	bool passed = true;
-	// run in parallel with omp
 	for (const auto &op : ops) {
 		const long k = op.get_key();
 		long v;
@@ -66,6 +65,7 @@ bool verify(T<K,V> &tree, const std::vector<Operation> &ops) {
 			case Operation::INSERT:
 				if (!tree.lookup(k, result)) {
 					std::cerr << "Key missing : " << k << '\n';
+					passed = false;
 					break;
 				}
 				if (result != k) {
@@ -87,6 +87,7 @@ template<typename K, typename V, template <typename, typename> class T>
 double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
 	auto start = std::chrono::high_resolution_clock::now();
 	// run in parallel with omp
+	
 	#pragma omp parallel for schedule(static, 100)
 	for (size_t i = 0; i < ops.size(); i++) {
 		const Operation &op = ops[i];
@@ -131,17 +132,20 @@ int main(int argc, char **argv) {
 	std::cerr << "number of ops in workload : " << workload.size() << '\n';
 	
 	std::cerr << "running baseline\n";
+	{
 	btreeolc::BTree<long, long> tree {};
 	
 	double ops = execute_workload(tree, workload);
 	std::cerr << "ops per second : "<< (long)ops << "\n\n";
+	}
 
-
+	{
+	std::cerr << "running BufferedBTree\n";
 	BufferedBTree<long, long> buffered_tree {};
 	
-	ops = execute_workload(tree, workload);
+	double ops = execute_workload(buffered_tree, workload);
 	std::cout << "ops per second : "<< (long)ops << "\n\n";
-
+	}
 	return 0;
 }
 
