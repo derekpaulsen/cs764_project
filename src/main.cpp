@@ -134,13 +134,13 @@ int main(int argc, char **argv) {
 	
 	std::cerr << "number of ops in workload : " << workload.size() << '\n';
 	
-	//std::cerr << "running baseline\n";
-	//{
-	//btreeolc::BTree<long, long> tree {};
-	//
-	//double ops = execute_workload(tree, workload);
-	//std::cerr << "ops per second : "<< (long)ops << "\n\n";
-	//}
+	std::cerr << "running baseline\n";
+	{
+	btreeolc::BTree<long, long> tree {};
+	
+	double ops = execute_workload(tree, workload);
+	std::cerr << "ops per second : "<< (long)ops << "\n\n";
+	}
 
 	{
 	std::cerr << "running BufferedBTree\n";
