@@ -49,19 +49,19 @@ class BufferedBTree : public BTree<K, V> {
 					return;
 
 				} else if (current_pos == max_inserts) {
-					leaf.load()->insert_unordered(key, payload, current_pos);
+					current_leaf->insert_unordered(key, payload, current_pos);
 					++insert_count;
 					current_leaf->count = max_inserts + 1;
-					pos = 0;
 					// spin until everyone is done inserting
 					while (insert_count != max_inserts+1);
 
 					K high_key = current_leaf->sort_and_dedupe();
 					leaf = allocate_new_leaf();
 
+					pos = 0;
 					insert_count = 0;
-					leaf.notify_all();
 					low_key = high_key;
+					leaf.notify_all();
 					low_key.notify_all();
 					insert_leaf(current_leaf);
 					return;
@@ -116,10 +116,8 @@ class BufferedBTree : public BTree<K, V> {
 
 				} while(needRestart);
 
-			} else {
-				return res;
-			}
-			return false;
+			}	
+			return res;
 		}
 
 		void insert_leaf(BTreeLeaf<K, V> *new_leaf) {

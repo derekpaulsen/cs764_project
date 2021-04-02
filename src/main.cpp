@@ -7,8 +7,10 @@
 #include "omp.h"
 #include "./opt_btree/BTreeOLC.h"
 #include "./opt_btree/BufferBTree.h"
+#include "./opt_btree/RingBufferBTree.h"
 
 using namespace std::string_literals;
+
 
 
 class Operation {
@@ -55,11 +57,10 @@ std::vector<Operation> read_workload(const std::string &fname) {
 
 template<typename K, typename V, template <typename, typename> class T>
 bool verify(T<K,V> &tree, const std::vector<Operation> &ops) {
-	K result;
+	V result;
 	bool passed = true;
 	for (const auto &op : ops) {
 		const long k = op.get_key();
-		long v;
 
 		switch (op.get_op_type()) {
 			case Operation::INSERT:
@@ -87,8 +88,9 @@ template<typename K, typename V, template <typename, typename> class T>
 double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
 	auto start = std::chrono::high_resolution_clock::now();
 	// run in parallel with omp
-	
-	#pragma omp parallel for schedule(static, 1)
+#ifndef NO_OMP
+	#pragma omp parallel for schedule(static, 2)
+#endif
 	for (size_t i = 0; i < ops.size(); i++) {
 		const Operation &op = ops[i];
 		const long k = op.get_key();
@@ -139,11 +141,19 @@ int main(int argc, char **argv) {
 	std::cerr << "ops per second : "<< (long)ops << "\n\n";
 	}
 
+	//{
+	//std::cerr << "running BufferedBTree\n";
+	//BufferedBTree<long, long> buffered_tree {};
+	//
+	//double ops = execute_workload(buffered_tree, workload);
+	//std::cout << "ops per second : "<< (long)ops << "\n\n";
+	//}
+
 	{
-	std::cerr << "running BufferedBTree\n";
-	BufferedBTree<long, long> buffered_tree {};
+	std::cerr << "running RingBufferBTree\n";
+	RingBufferBTree<long, long> ring_buffer_tree {};
 	
-	double ops = execute_workload(buffered_tree, workload);
+	double ops = execute_workload(ring_buffer_tree, workload);
 	std::cout << "ops per second : "<< (long)ops << "\n\n";
 	}
 	return 0;

@@ -440,7 +440,7 @@ struct BTree {
 
     BTreeLeaf<Key,Value>* leaf = static_cast<BTreeLeaf<Key,Value>*>(node);
     unsigned pos = leaf->lowerBound(k);
-    bool success;
+    bool success = false;
     if ((pos<leaf->count) && (leaf->keys[pos]==k)) {
       success = true;
       result = leaf->payloads[pos];
