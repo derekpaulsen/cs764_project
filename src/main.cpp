@@ -66,6 +66,7 @@ bool verify(T<K,V> &tree, const std::vector<Operation> &ops) {
 			case Operation::INSERT:
 				if (!tree.lookup(k, result)) {
 					std::cerr << "Key missing : " << k << '\n';
+					tree.lookup(k, result);
 					passed = false;
 					break;
 				}
@@ -89,7 +90,7 @@ double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
 	auto start = std::chrono::high_resolution_clock::now();
 	// run in parallel with omp
 #ifndef NO_OMP
-	#pragma omp parallel for schedule(static, 2)
+	#pragma omp parallel for schedule(dynamic)
 #endif
 	for (size_t i = 0; i < ops.size(); i++) {
 		const Operation &op = ops[i];
@@ -133,29 +134,29 @@ int main(int argc, char **argv) {
 	
 	std::cerr << "number of ops in workload : " << workload.size() << '\n';
 	
-	std::cerr << "running baseline\n";
-	{
-	btreeolc::BTree<long, long> tree {};
-	
-	double ops = execute_workload(tree, workload);
-	std::cerr << "ops per second : "<< (long)ops << "\n\n";
-	}
-
+	//std::cerr << "running baseline\n";
 	//{
-	//std::cerr << "running BufferedBTree\n";
-	//BufferedBTree<long, long> buffered_tree {};
+	//btreeolc::BTree<long, long> tree {};
 	//
-	//double ops = execute_workload(buffered_tree, workload);
-	//std::cout << "ops per second : "<< (long)ops << "\n\n";
+	//double ops = execute_workload(tree, workload);
+	//std::cerr << "ops per second : "<< (long)ops << "\n\n";
 	//}
 
 	{
-	std::cerr << "running RingBufferBTree\n";
-	RingBufferBTree<long, long> ring_buffer_tree {};
+	std::cerr << "running BufferedBTree\n";
+	BufferedBTree<long, long> buffered_tree {};
 	
-	double ops = execute_workload(ring_buffer_tree, workload);
+	double ops = execute_workload(buffered_tree, workload);
 	std::cout << "ops per second : "<< (long)ops << "\n\n";
 	}
+
+	//{
+	//std::cerr << "running RingBufferBTree\n";
+	//RingBufferBTree<long, long> ring_buffer_tree {};
+	//
+	//double ops = execute_workload(ring_buffer_tree, workload);
+	//std::cout << "ops per second : "<< (long)ops << "\n\n";
+	//}
 	return 0;
 }
 

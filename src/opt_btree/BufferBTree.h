@@ -1,7 +1,7 @@
 #pragma once
 #include "BTreeOLC.h"
 #include<atomic>
-#include<mutex>
+#include<shared_mutex>
 #include<utility>
 #include<optional>
 
@@ -11,17 +11,29 @@ using namespace btreeolc;
 template<class K, class V>
 class BufferedBTree : public BTree<K, V> {
 	
+	struct State {
+		BTreeLeaf<K,V> *leaf;
+		int pos, low_key;
+
+		bool operator==(const State &other) const {
+			return leaf == other.leaf && pos == other.pos && low_key == other.low_key;
+		}
+		State operator+(const int i) const {
+			return {leaf, pos+i, low_key};
+		}
+	};
 	private:
-		std::atomic<int> pos, insert_count;
-		std::atomic<K> low_key;
-		std::atomic<BTreeLeaf<K, V> *> leaf;
+		std::atomic<int> insert_count;
+		std::atomic<State> state;
+		std::shared_mutex leaf_lock;
 		
 		
 		BTreeLeaf<K,V> *allocate_new_leaf() {
 			auto leaf = new BTreeLeaf<K,V>();
+			leaf->count = 0;
 			// clear the memory 
-			std::memset(leaf->keys, 0, sizeof(BTreeLeaf<K,V>::keys));
-			std::memset(leaf->payloads, 0, sizeof(BTreeLeaf<K,V>::payloads));
+			//std::memset(leaf->keys, 0, sizeof(BTreeLeaf<K,V>::keys));
+			//std::memset(leaf->payloads, 0, sizeof(BTreeLeaf<K,V>::payloads));
 			return leaf;
 		}
 		
@@ -30,67 +42,74 @@ class BufferedBTree : public BTree<K, V> {
 		// 75% load factor on bulk inserted leaves
 		static const int max_inserts = BTreeLeaf<K,V>::maxEntries * .75;
 		
-		BufferedBTree() : pos(0), low_key(-1) {
-			leaf = allocate_new_leaf();
+		BufferedBTree() : state(State(allocate_new_leaf(), 0, -1)) {
 			this->root = nullptr;
 		}
 
 		
 		void insert(K key, V payload) {
 			start_insert:
-			if (key > low_key.load()) {
+			auto cs = state.load();
+			if (key > cs.low_key) {
+				//if (current_low_key != low_key.load())
+				//	goto start_insert;
 
-				BTreeLeaf<K,V> *current_leaf = leaf.load();
-				int current_pos = pos++;
+				
+				while(!state.compare_exchange_strong(cs, cs +1)) {
+					if (key <= cs.low_key || cs.pos > max_inserts)
+						goto start_insert;
+				}
+				
+				int current_pos = cs.pos;
+				auto *current_leaf = cs.leaf;
 
 				if (current_pos < max_inserts) {
-					leaf.load()->insert_unordered(key, payload, current_pos);
+					current_leaf->insert_unordered(key, payload, current_pos);
 					++insert_count;
-					return;
 
 				} else if (current_pos == max_inserts) {
 					current_leaf->insert_unordered(key, payload, current_pos);
 					++insert_count;
+					
+					while(insert_count != max_inserts + 1);
+
 					current_leaf->count = max_inserts + 1;
-					// spin until everyone is done inserting
-					while (insert_count != max_inserts+1);
-
 					K high_key = current_leaf->sort_and_dedupe();
-					leaf = allocate_new_leaf();
-
-					pos = 0;
-					insert_count = 0;
-					low_key = high_key;
-					leaf.notify_all();
-					low_key.notify_all();
 					insert_leaf(current_leaf);
-					return;
+
+
+					insert_count = 0;
+					state = {allocate_new_leaf(), 0, high_key};
+					state.notify_all();
+
 
 				} else {
 					// wait for new leaf to be allocated
-					leaf.wait(current_leaf);
+					state.wait(cs);
 					goto start_insert;
 				}
 			} else {
 				// insert normally into the tree
 				BTree<K, V>::insert(key, payload);
+				//std::cerr << "i " << key << '\n';
 			}
 		}
 		
 		bool lookup(const K key, V &result) {
-			auto *current_leaf = leaf.load();
-			const K current_low_key = low_key.load();
+			State cs = state.load();
+			auto *current_leaf = cs.leaf;
+			const K current_low_key = cs.low_key;
 
 			if (key <= current_low_key) {
 				return BTree<K,V>::lookup(key, result);
 			} 
-			auto count = pos + 1;
+			auto count = cs.pos + 1;
 			auto res = current_leaf->search_unsorted(key, count, result);
 			//TODO what happens when the leaf is split?
-			if (current_leaf != leaf) {
+			if (current_leaf != state.load().leaf) {
 				// leaf was inserted into the tree
 				// wait for insert to complete
-				low_key.wait(current_low_key);
+				state.wait(cs);
 				bool needRestart;
 				// try reading the leaf
 				do {
@@ -121,8 +140,8 @@ class BufferedBTree : public BTree<K, V> {
 		}
 
 		void insert_leaf(BTreeLeaf<K, V> *new_leaf) {
-			if (this->root == nullptr) {
-				this->root = new_leaf;
+			NodeBase *null = nullptr;
+			if (this->root.compare_exchange_strong(null, new_leaf)) {
 				return;
 			}
 		

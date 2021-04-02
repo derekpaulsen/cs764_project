@@ -7,6 +7,7 @@
 #include <sched.h>
 #include <algorithm>
 #include <optional>
+#include <iostream>
 
 namespace btreeolc {
 
@@ -174,15 +175,23 @@ struct BTreeLeaf : public BTreeLeafBase {
 		// unique copy, taking the last value in the group
 		int current_pos = 0;
 		for (int i=0; i < count-1; ++i) {
-			if (temp_keys[i] != temp_keys[i+1]) {
-				keys[current_pos] = temp_keys[i];
-				payloads[current_pos] = temp_payloads[i];
+			if (temp_keys[indexes[i]] != temp_keys[indexes[i+1]]) {
+				keys[current_pos] = temp_keys[indexes[i]];
+				payloads[current_pos] = temp_payloads[indexes[i]];
 				++current_pos;
 			} 
 		}
-		keys[current_pos] = temp_keys[count-1];
-		payloads[current_pos] = temp_payloads[count-1];
-		count = current_pos + 1;
+		keys[current_pos] = temp_keys[indexes[count-1]];
+		payloads[current_pos] = temp_payloads[indexes[count-1]];
+		count = current_pos+1;
+
+		if (!std::is_sorted(keys, keys + count)) {
+			std::cerr << "Keys not sorted!";
+			for (int i = 0; i < count; ++i)
+				std::cerr << keys[i] << ' ';
+			std::cerr << '\n';
+
+		}
 		return keys[current_pos];
 	   
 	}
@@ -200,6 +209,14 @@ struct BTreeLeaf : public BTreeLeafBase {
 	void insert_unordered(Key k,Payload p, size_t pos) {
 		keys[pos] = k;
 		payloads[pos] = p;
+
+		if (!std::is_sorted(keys, keys + count)) {
+			std::cerr << "Keys not sorted!";
+			for (int i = 0; i < count; ++i)
+				std::cerr << keys[i] << ' ';
+			std::cerr << '\n';
+
+		}
 	}
 };
 

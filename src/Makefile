@@ -1,7 +1,7 @@
 .PHONY: workload test clean
 
 CXX = g++-11 -std=c++20 -O3 -Wno-invalid-offsetof -mcx16 -DNDEBUG
-LIBS =  -fopenmp -lpthread 
+LIBS =  -fopenmp -lpthread -latomic
 
 FILES = main.cpp ./opt_btree/BTreeOLC.h ./opt_btree/BufferBTree.h ./opt_btree/RingBufferBTree.h
 
@@ -10,7 +10,7 @@ test: vanilla
 	./vanilla ./workload/seq_insert.txt
 
 debug: $(FILES)
-	$(CXX) ./main.cpp  -o debug $(LIBS) -O0 -g -DNO_OMP
+	$(CXX) ./main.cpp  -o debug $(LIBS) -O0 -g #-DNO_OMP
 
 
 vanilla: $(FILES)
