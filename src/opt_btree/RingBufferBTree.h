@@ -2,6 +2,7 @@
 #include "BTreeOLC.h"
 #include<atomic>
 #include<mutex>
+#include<shared_mutex>
 #include<utility>
 #include<optional>
 
@@ -23,7 +24,7 @@ class RingBufferBTree : public BTree<K, V> {
 	private:
 		std::atomic<long> size, end;
 		std::pair<K,V> buffer [buffer_size];
-		std::mutex tree_lock;
+		std::shared_mutex tree_lock;
 		
 	public:
 		
@@ -32,20 +33,23 @@ class RingBufferBTree : public BTree<K, V> {
 
 		
 		void insert(K key, V payload) {
+			tree_lock.lock_shared();
 			long current_end = end++;
 			long pos = current_end & buffer_mask;
-			long current_size = size.load();
+
 			buffer[pos].first = key;
 			buffer[pos].second = payload;
 			++size;
+			tree_lock.unlock_shared();
 			if (current_end && !(current_end & insert_chunk_mask)) {
+				tree_lock.lock();
 				long insert_pos = (current_end - insert_chunk_size) & buffer_mask;
-				std::lock_guard<std::mutex> lock (tree_lock);
 				for (int i = 0; i < insert_chunk_size; ++i) {
 					BTree<K,V>::insert(buffer[insert_pos].first, buffer[insert_pos].second);
 					++insert_pos;
 				}
 				size -= insert_chunk_size;
+				tree_lock.unlock();
 			}
 
 		}
