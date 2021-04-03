@@ -3,7 +3,7 @@
 CXX = g++-11 -std=c++20 -O3 -Wno-invalid-offsetof -mcx16 -DNDEBUG
 LIBS =  -fopenmp -lpthread -latomic
 
-FILES = main.cpp ./opt_btree/BTreeOLC.h ./opt_btree/BufferBTree.h ./opt_btree/RingBufferBTree.h
+FILES = main.cpp ./opt_btree/*
 
 test: vanilla
 	@echo "number of threads = $(OMP_NUM_THREADS)"

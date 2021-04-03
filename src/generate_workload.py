@@ -11,7 +11,7 @@ argp.add_argument('--nreads', required=True, type=int)
 
 OUTPUT_DIR = './workload/'
 RAND_MIN = 0
-RAND_MAX = 2**60
+RAND_MAX = 2**30
 READ = 'READ'
 INSERT='INSERT'
 
