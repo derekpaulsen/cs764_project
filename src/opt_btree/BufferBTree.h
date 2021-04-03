@@ -56,6 +56,7 @@ class BufferedBTree : public BTree<K, V> {
 				// check that it is possible to insert, otherwise wait 
 				// and try again
 				if (init_state.pos > max_inserts) {
+					// this wait improves performance
 					state.wait(init_state);
 					goto start_insert;
 				}
@@ -74,15 +75,15 @@ class BufferedBTree : public BTree<K, V> {
 				if (current_pos == max_inserts) {
 					current_leaf->insert_unordered(key, payload, current_pos);
 					++insert_count;
+					current_leaf->count = max_inserts + 1;
+					leaf = allocate_new_leaf();
 					
 					while(insert_count != max_inserts + 1);
 
-					current_leaf->count = max_inserts + 1;
 					K high_key = current_leaf->sort_and_dedupe();
 					insert_leaf(current_leaf);
 
 					insert_count = 0;
-					leaf = allocate_new_leaf();
 					state = {0, high_key};
 					state.notify_all();
 
