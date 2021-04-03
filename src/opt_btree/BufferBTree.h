@@ -12,20 +12,21 @@ template<class K, class V>
 class BufferedBTree : public BTree<K, V> {
 	
 	struct State {
-		BTreeLeaf<K,V> *leaf;
-		int pos, low_key;
+		long pos;
+		K low_key;
 
 		bool operator==(const State &other) const {
-			return leaf == other.leaf && pos == other.pos && low_key == other.low_key;
+			return pos == other.pos && low_key == other.low_key;
 		}
 		State operator+(const int i) const {
-			return {leaf, pos+i, low_key};
+			return {pos+i, low_key};
 		}
 	};
 	private:
 		std::atomic<int> insert_count;
 		std::atomic<State> state;
 		std::shared_mutex leaf_lock;
+		std::atomic<BTreeLeaf<K,V> *>leaf;
 		
 		
 		BTreeLeaf<K,V> *allocate_new_leaf() {
@@ -42,26 +43,33 @@ class BufferedBTree : public BTree<K, V> {
 		// 75% load factor on bulk inserted leaves
 		static const int max_inserts = BTreeLeaf<K,V>::maxEntries * .75;
 		
-		BufferedBTree() : state(State(allocate_new_leaf(), 0, -1)) {
+		BufferedBTree() : state(State(0, -1)), leaf(allocate_new_leaf()) {
 			this->root = nullptr;
 		}
 
 		
 		void insert(K key, V payload) {
 			start_insert:
-			auto cs = state.load();
-			if (key > cs.low_key) {
+			auto init_state = state.load();
+			if (key > init_state.low_key) {
 				//if (current_low_key != low_key.load())
 				//	goto start_insert;
+				// check that it is possible to insert, otherwise wait 
+				// and try again
+				if (init_state.pos > max_inserts) {
+					state.wait(init_state);
+					goto start_insert;
+				}
 
-				
+				auto *current_leaf = leaf.load();
+				auto cs = init_state;	
 				while(!state.compare_exchange_strong(cs, cs +1)) {
-					if (key <= cs.low_key || cs.pos > max_inserts)
+					// current leaf invalid or all spots reserved
+					if (init_state.low_key != cs.low_key || cs.pos > max_inserts)
 						goto start_insert;
 				}
 				
 				int current_pos = cs.pos;
-				auto *current_leaf = cs.leaf;
 
 				if (current_pos < max_inserts) {
 					current_leaf->insert_unordered(key, payload, current_pos);
@@ -79,7 +87,8 @@ class BufferedBTree : public BTree<K, V> {
 
 
 					insert_count = 0;
-					state = {allocate_new_leaf(), 0, high_key};
+					leaf = allocate_new_leaf();
+					state = {0, high_key};
 					state.notify_all();
 
 
@@ -97,7 +106,7 @@ class BufferedBTree : public BTree<K, V> {
 		
 		bool lookup(const K key, V &result) {
 			State cs = state.load();
-			auto *current_leaf = cs.leaf;
+			auto *current_leaf = leaf.load();
 			const K current_low_key = cs.low_key;
 
 			if (key <= current_low_key) {
@@ -106,7 +115,7 @@ class BufferedBTree : public BTree<K, V> {
 			auto count = cs.pos + 1;
 			auto res = current_leaf->search_unsorted(key, count, result);
 			//TODO what happens when the leaf is split?
-			if (current_leaf != state.load().leaf) {
+			if (current_leaf != leaf.load()) {
 				// leaf was inserted into the tree
 				// wait for insert to complete
 				state.wait(cs);
