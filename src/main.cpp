@@ -91,7 +91,7 @@ double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
 	auto start = std::chrono::high_resolution_clock::now();
 	// run in parallel with omp
 #ifndef NO_OMP
-	#pragma omp parallel for schedule(dynamic)
+	#pragma omp parallel for schedule(dynamic, 1)
 #endif
 	for (size_t i = 0; i < ops.size(); i++) {
 		const Operation &op = ops[i];

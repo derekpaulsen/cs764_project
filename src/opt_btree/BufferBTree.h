@@ -25,7 +25,6 @@ class BufferedBTree : public BTree<K, V> {
 	private:
 		std::atomic<int> insert_count;
 		std::atomic<State> state;
-		std::shared_mutex leaf_lock;
 		std::atomic<BTreeLeaf<K,V> *>leaf;
 		
 		
@@ -41,7 +40,7 @@ class BufferedBTree : public BTree<K, V> {
 
 	public:
 		// 75% load factor on bulk inserted leaves
-		static const int max_inserts = BTreeLeaf<K,V>::maxEntries * .75;
+		static const int max_inserts = BTreeLeaf<K,V>::maxEntries * .9;
 		
 		BufferedBTree() : state(State(0, -1)), leaf(allocate_new_leaf()) {
 			this->root = nullptr;
@@ -69,13 +68,10 @@ class BufferedBTree : public BTree<K, V> {
 						goto start_insert;
 				}
 				
-				int current_pos = cs.pos;
+				const int current_pos = cs.pos;
 
-				if (current_pos < max_inserts) {
-					current_leaf->insert_unordered(key, payload, current_pos);
-					++insert_count;
 
-				} else if (current_pos == max_inserts) {
+				if (current_pos == max_inserts) {
 					current_leaf->insert_unordered(key, payload, current_pos);
 					++insert_count;
 					
@@ -85,18 +81,17 @@ class BufferedBTree : public BTree<K, V> {
 					K high_key = current_leaf->sort_and_dedupe();
 					insert_leaf(current_leaf);
 
-
 					insert_count = 0;
 					leaf = allocate_new_leaf();
 					state = {0, high_key};
 					state.notify_all();
 
-
 				} else {
-					// wait for new leaf to be allocated
-					state.wait(cs);
-					goto start_insert;
+					//(current_pos < max_inserts) {
+					current_leaf->insert_unordered(key, payload, current_pos);
+					++insert_count;
 				}
+
 			} else {
 				// insert normally into the tree
 				BTree<K, V>::insert(key, payload);
