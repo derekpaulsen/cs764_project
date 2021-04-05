@@ -111,6 +111,7 @@ class IndBufferedBTree : public BTree<K, V> {
 				// unlock the last buffer that was inserted into
 				if (last_insert_buffer[tnum]) {
 					last_insert_buffer[tnum]->mu.unlock_shared();
+					last_insert_buffer[tnum] = nullptr;
 				}
 				// try to lock the current buffer
 				if (curr_buffer->mu.try_lock_shared()) 
@@ -126,6 +127,7 @@ class IndBufferedBTree : public BTree<K, V> {
 			if (curr_buffer->push_back(key, payload, tnum)) {
 				// this thread's buffer is full
 				curr_buffer->mu.unlock_shared();
+				last_insert_buffer[tnum] = nullptr;
 
 				if (insert_buffer.compare_exchange_strong(curr_buffer, nullptr)) {
 					// this thread has to insert everything 
