@@ -16,8 +16,8 @@ class IndBufferedBTree : public BTree<K, V> {
 	public:
 		static constexpr int capacity = 12;
 
-	struct alignas(64) Buffer {
-		static constexpr int capacity = 63;
+	struct alignas(128) Buffer {
+		static constexpr int capacity = 127;
 		long size = 0;
 		std::array<std::pair<K,V>, capacity> buf;
 		
