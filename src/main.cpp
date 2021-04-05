@@ -9,6 +9,7 @@
 #include "./opt_btree/BufferBTree.h"
 #include "./opt_btree/LockingBufferBTree.h"
 #include "./opt_btree/RingBufferBTree.h"
+#include "./opt_btree/IndBufferBTree.h"
 
 using namespace std::string_literals;
 
@@ -151,6 +152,13 @@ int main(int argc, char **argv) {
 	std::cout << "ops per second : "<< (long)ops << "\n\n";
 	}
 
+	{
+	std::cerr << "running IndBufferedBTree\n";
+	IndBufferedBTree<long, long> buffered_tree {};
+	
+	double ops = execute_workload(buffered_tree, workload);
+	std::cout << "ops per second : "<< (long)ops << "\n\n";
+	}
 	//{
 	//std::cerr << "running LockingBufferedBTree\n";
 	//LockingBufferedBTree<long, long> buffered_tree {};
