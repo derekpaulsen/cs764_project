@@ -1,6 +1,7 @@
 #pragma once
 #include "BTreeOLC.h"
 #include<atomic>
+#include<memory>
 #include<array>
 #include<shared_mutex>
 #include<utility>
@@ -17,7 +18,7 @@ class IndBufferedBTree : public BTree<K, V> {
 		static constexpr int capacity = 12;
 
 	struct alignas(128) Buffer {
-		static constexpr int capacity = 127;
+		static constexpr int capacity = 255;
 		long size = 0;
 		std::array<std::pair<K,V>, capacity> buf;
 		
@@ -87,15 +88,18 @@ class IndBufferedBTree : public BTree<K, V> {
 							
 	};
 
+
 	private:
 		std::atomic<InsertBuffer *>insert_buffer;
 		std::array<InsertBuffer *, capacity> last_insert_buffer;
+		std::array<std::pair<InsertBuffer *, std::mutex>, capacity> read_buffers ;
 
 	public:
 
 		IndBufferedBTree() : insert_buffer(new InsertBuffer()) {
 			BTree<K,V>();
 			last_insert_buffer.fill(nullptr);
+
 		}
 		
 		void insert(K key, V payload) {
@@ -130,6 +134,8 @@ class IndBufferedBTree : public BTree<K, V> {
 				last_insert_buffer[tnum] = nullptr;
 
 				if (insert_buffer.compare_exchange_strong(curr_buffer, nullptr)) {
+					std::shared_ptr<InsertBuffer> sp (curr_buffer);
+					read_buffers[tnum].store(sp); 
 					// this thread has to insert everything 
 					insert_buffer = new InsertBuffer();
 					insert_buffer.notify_all();
@@ -142,8 +148,8 @@ class IndBufferedBTree : public BTree<K, V> {
 						}
 					}
 					curr_buffer->mu.unlock();
-					delete curr_buffer;
-					curr_buffer = nullptr;
+					sp.reset();
+					read_buffers[tnum].store(sp);
 				} 				
 			}
 			// if the buffer has been swapped, unlock the last buffer that
@@ -156,11 +162,20 @@ class IndBufferedBTree : public BTree<K, V> {
 		}
 		
 		bool lookup(const K key, V &result) {
-			// FIXME this is incorrect
-			if (insert_buffer.load()->search(key, result))
+			// wait for the read buffers to be up to date
+			insert_buffer.wait(nullptr);
+
+			auto p = insert_buffer.load();
+			if (p && p->search(key, result))
 				return true;
-			else 
-				return BTree<K,V>::lookup(key, result);
+			
+			for (const auto &sptr : read_buffers) {
+				auto p = sptr.load();
+				if (p && p->search(key, result))
+					return true;
+			}
+
+			return BTree<K,V>::lookup(key, result);
 
 		}
 };

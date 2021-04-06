@@ -13,7 +13,9 @@
 
 using namespace std::string_literals;
 
-
+#ifndef OMP_MODE
+#define OMP_MODE dynamic,1
+#endif
 
 class Operation {
 	public:
@@ -92,7 +94,7 @@ double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
 	auto start = std::chrono::high_resolution_clock::now();
 	// run in parallel with omp
 #ifndef NO_OMP
-	#pragma omp parallel for schedule(dynamic, 1)
+	#pragma omp parallel for schedule(OMP_MODE)
 #endif
 	for (size_t i = 0; i < ops.size(); i++) {
 		const Operation &op = ops[i];
@@ -133,24 +135,24 @@ int main(int argc, char **argv) {
 	
 	std::string fname = argv[1];
 	auto workload = read_workload(fname);
+	std::cerr << "omp max thread number : " << omp_get_max_threads() << '\n';
+	std::cerr << "number of ops in workload : " << workload.size() << '\n';	
 	
-	std::cerr << "number of ops in workload : " << workload.size() << '\n';
-	
-	std::cerr << "running baseline\n";
-	{
-	btreeolc::BTree<long, long> tree {};
-	
-	double ops = execute_workload(tree, workload);
-	std::cerr << "ops per second : "<< (long)ops << "\n\n";
-	}
+	//std::cerr << "running baseline\n";
+	//{
+	//btreeolc::BTree<long, long> tree {};
+	//
+	//double ops = execute_workload(tree, workload);
+	//std::cerr << "ops per second : "<< (long)ops << "\n\n";
+	//}
 
-	{
-	std::cerr << "running BufferedBTree\n";
-	BufferedBTree<long, long> buffered_tree {};
-	
-	double ops = execute_workload(buffered_tree, workload);
-	std::cout << "ops per second : "<< (long)ops << "\n\n";
-	}
+	//{
+	//std::cerr << "running BufferedBTree\n";
+	//BufferedBTree<long, long> buffered_tree {};
+	//
+	//double ops = execute_workload(buffered_tree, workload);
+	//std::cout << "ops per second : "<< (long)ops << "\n\n";
+	//}
 
 	{
 	std::cerr << "running IndBufferedBTree\n";
