@@ -1,77 +1,183 @@
 #pragma once
 #include "BTreeOLC.h"
 #include<atomic>
-#include<mutex>
+#include<memory>
+#include<array>
 #include<shared_mutex>
 #include<utility>
 #include<optional>
+#include<algorithm>
+#include "omp.h"
 
 using namespace btreeolc;
 
+template<class T>
+struct Versioned {
+	T val;
+	long version;
 
-template<class K, class V>
-class RingBufferBTree : public BTree<K, V> {
-	
-	public:
-		// 75% load factor on bulk inserted leaves
-		//static constexpr int max_inserts = BTreeLeaf<K,V>::maxEntries * .75;
-		static constexpr long insert_chunk_size = 64; // 2^5
-		static constexpr long insert_chunk_mask = 0x0000003F;
-		static constexpr long buffer_power = 12;
-		static constexpr long buffer_size = 1 << buffer_power; // 2^11
-		static constexpr long buffer_mask = 0xFFFFFFFFFFFFFFFF >> (64 - buffer_power);
-
-	private:
-		std::atomic<long> size, end;
-		std::pair<K,V> buffer [buffer_size];
-		std::shared_mutex tree_lock;
-		
-	public:
-		
-		RingBufferBTree() : size(0), end(0), BTree<K,V>() {
+	Versioned() = default;
+	Versioned(const T v, const long ver) : val(v), version(ver) {}
+	Versioned(const Versioned<T> &other) = default;
+	Versioned(Versioned<T> &&other) = default;
+	void operator=(const Versioned<T> &other) {
+		if (other.version > this->version) {
+			val = other.val;
+			version = other.version;
 		}
-
-		
-		void insert(K key, V payload) {
-			tree_lock.lock_shared();
-			long current_end = end++;
-			long pos = current_end & buffer_mask;
-
-			buffer[pos].first = key;
-			buffer[pos].second = payload;
-			++size;
-			tree_lock.unlock_shared();
-			if (current_end && !(current_end & insert_chunk_mask)) {
-				tree_lock.lock();
-				long insert_pos = (current_end - insert_chunk_size) & buffer_mask;
-				for (int i = 0; i < insert_chunk_size; ++i) {
-					BTree<K,V>::insert(buffer[insert_pos].first, buffer[insert_pos].second);
-					++insert_pos;
-				}
-				size -= insert_chunk_size;
-				tree_lock.unlock();
-			}
-
-		}
-		
-		bool lookup(const K key, V &result) {
-			if (!BTree<K,V>::lookup(key, result)) {
-				long current_size = size.load();
-				long pos = (end.load() - current_size) & buffer_mask;
-				for (int i = 0; i < current_size; ++i) {
-
-					if (buffer[pos & buffer_mask].first == key) {
-						result = buffer[pos & buffer_mask].second;
-						return true;
-					}
-					++pos;
-				}
-			} else {
-				return true;
-			}
-			return false;
-
-		}
+	}
+	void operator=(const Versioned<T> &&other) = delete;
+			
 
 };
 
+template<class K, class V>
+class RingBufferedBTree : public BTree<K, Versioned<V>> {
+	public:
+		static constexpr int max_threads = 12;
+		static constexpr int capacity_per_thread = 256;
+
+
+	struct InsertBuffer {
+		static constexpr long capacity = max_threads * capacity_per_thread;
+		std::shared_mutex mu;
+		std::atomic<long> pos;
+		long min_version;
+		std::array<std::pair<K,Versioned<V>>, capacity> buf;
+		
+		InsertBuffer() : mu(), buf(), pos(0), min_version(0) {
+		}
+
+		bool push_back(K key, const Versioned<V> &val) {
+			long insert_pos = pos++;
+			if (insert_pos < capacity) {
+				buf[insert_pos].first = key;
+				buf[insert_pos].second = val;
+				return false;
+			} else {
+				// buffer is full
+				return true;
+			}
+		}
+
+		bool search(K key, V &result, const long version) {
+			if (version < min_version)
+				return false;
+			
+			for (int i = std::min(pos.load(), capacity-1); i >= 0; --i) 
+				if (buf[i].first == key) {
+					result = buf[i].second.val;
+				}
+			return true;
+		}
+
+		void reset(const long version) {
+			min_version = version;
+			pos = 0;
+		}
+							
+	};
+
+
+	private:
+		std::atomic<InsertBuffer *>insert_buffer;
+		std::array<InsertBuffer *, max_threads> last_insert_buffer;
+		std::array<InsertBuffer, max_threads> insert_buffers;
+		std::atomic<long> version;
+
+	public:
+
+		RingBufferedBTree() {
+			BTree<K,Versioned<V>>();
+			last_insert_buffer.fill(nullptr);
+			insert_buffer = insert_buffers.data();
+			for (auto &buf : insert_buffers)
+				buf.reset(0);
+		}
+		
+		void insert(K key, V payload) {
+			int tnum = omp_get_thread_num();
+			Versioned<V> vpayload (payload, version++);
+
+			start_insert:
+			InsertBuffer *curr_buffer;
+			// grab the next valid buffer		
+			while (!(curr_buffer = this->insert_buffer.load()))
+				insert_buffer.wait(nullptr);
+
+			if (curr_buffer != last_insert_buffer[tnum]) {
+				if (last_insert_buffer[tnum]) {
+					// unlock the last buffer that was inserted into
+					last_insert_buffer[tnum]->mu.unlock_shared();
+					last_insert_buffer[tnum] = nullptr;
+				}
+			
+				// check if this thread has a lock on the current buffer
+				// try to lock the current buffer
+				if (curr_buffer->mu.try_lock_shared()) {
+					// if successful, update the last buffer inserted into
+					last_insert_buffer[tnum] = curr_buffer;
+				} else {
+					// if not successful restart insert
+					goto start_insert;
+				}
+			}
+			if (curr_buffer->push_back(key, vpayload)) {
+
+				if (last_insert_buffer[tnum]) {
+					last_insert_buffer[tnum]->mu.unlock_shared();
+					last_insert_buffer[tnum] = nullptr;
+				}
+
+				if (insert_buffer.compare_exchange_strong(curr_buffer, nullptr)) {
+					// this thread has to insert everything 
+					//
+					// find next open insert buffer
+					while (true) {
+						for (auto &buf : insert_buffers) {
+							if ((&buf != curr_buffer) && (buf.mu.try_lock())) {
+								insert_buffer = &buf;
+								buf.mu.unlock();
+								goto loop_done;
+							}
+						}
+					}
+
+					loop_done:
+					insert_buffer.notify_all();
+					//wait for other threads to complete inserting
+					curr_buffer->mu.lock();
+
+					for (const auto &p : curr_buffer->buf) {
+						BTree<K,Versioned<V>>::insert(p.first, p.second);
+					}
+					curr_buffer->reset(version.load());
+					curr_buffer->mu.unlock();
+
+				} 				
+			}
+			// if the buffer has been swapped, unlock the last buffer that
+			// was inserted into
+			if (last_insert_buffer[tnum] && last_insert_buffer[tnum] != insert_buffer.load()) {
+				// unlock the last buffer that was inserted into
+				last_insert_buffer[tnum]->mu.unlock_shared();
+				last_insert_buffer[tnum] = nullptr;
+			}
+			
+		}
+		
+		bool lookup(const K key, V &result) {
+			// FIXME this is incorrect;
+			long curr_version = version.load();
+			auto *buf = insert_buffer.load();
+			if (buf && buf->search(key, result, curr_version))
+				return true;
+
+			Versioned<V> vres;
+			if (BTree<K,Versioned<V>>::lookup(key, vres)) {
+				result = vres.val;
+				return true;
+			}
+			return false;
+		}
+};

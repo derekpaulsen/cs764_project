@@ -154,13 +154,13 @@ int main(int argc, char **argv) {
 	//std::cout << "ops per second : "<< (long)ops << "\n\n";
 	//}
 
-	{
-	std::cerr << "running IndBufferedBTree\n";
-	IndBufferedBTree<long, long> buffered_tree {};
-	
-	double ops = execute_workload(buffered_tree, workload);
-	std::cout << "ops per second : "<< (long)ops << "\n\n";
-	}
+	//{
+	//std::cerr << "running IndBufferedBTree\n";
+	//IndBufferedBTree<long, long> buffered_tree {};
+	//
+	//double ops = execute_workload(buffered_tree, workload);
+	//std::cout << "ops per second : "<< (long)ops << "\n\n";
+	//}
 	//{
 	//std::cerr << "running LockingBufferedBTree\n";
 	//LockingBufferedBTree<long, long> buffered_tree {};
@@ -168,13 +168,13 @@ int main(int argc, char **argv) {
 	//double ops = execute_workload(buffered_tree, workload);
 	//std::cout << "ops per second : "<< (long)ops << "\n\n";
 	//}
-	//{
-	//std::cerr << "running RingBufferBTree\n";
-	//RingBufferBTree<long, long> ring_buffer_tree {};
-	//
-	//double ops = execute_workload(ring_buffer_tree, workload);
-	//std::cout << "ops per second : "<< (long)ops << "\n\n";
-	//}
+	{
+	std::cerr << "running RingBufferBTree\n";
+	RingBufferedBTree<long, long> ring_buffer_tree {};
+	
+	double ops = execute_workload(ring_buffer_tree, workload);
+	std::cout << "ops per second : "<< (long)ops << "\n\n";
+	}
 	return 0;
 }
 
