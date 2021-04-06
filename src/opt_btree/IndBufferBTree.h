@@ -92,7 +92,6 @@ class IndBufferedBTree : public BTree<K, V> {
 	private:
 		std::atomic<InsertBuffer *>insert_buffer;
 		std::array<InsertBuffer *, capacity> last_insert_buffer;
-		std::array<std::pair<InsertBuffer *, std::mutex>, capacity> read_buffers ;
 
 	public:
 
@@ -134,8 +133,6 @@ class IndBufferedBTree : public BTree<K, V> {
 				last_insert_buffer[tnum] = nullptr;
 
 				if (insert_buffer.compare_exchange_strong(curr_buffer, nullptr)) {
-					std::shared_ptr<InsertBuffer> sp (curr_buffer);
-					read_buffers[tnum].store(sp); 
 					// this thread has to insert everything 
 					insert_buffer = new InsertBuffer();
 					insert_buffer.notify_all();
@@ -148,8 +145,8 @@ class IndBufferedBTree : public BTree<K, V> {
 						}
 					}
 					curr_buffer->mu.unlock();
-					sp.reset();
-					read_buffers[tnum].store(sp);
+					delete curr_buffer;
+
 				} 				
 			}
 			// if the buffer has been swapped, unlock the last buffer that
@@ -162,18 +159,10 @@ class IndBufferedBTree : public BTree<K, V> {
 		}
 		
 		bool lookup(const K key, V &result) {
-			// wait for the read buffers to be up to date
-			insert_buffer.wait(nullptr);
-
-			auto p = insert_buffer.load();
-			if (p && p->search(key, result))
+			// FIXME this is incorrect;
+			auto *buf = insert_buffer.load();
+			if (buf && buf->search(key, result))
 				return true;
-			
-			for (const auto &sptr : read_buffers) {
-				auto p = sptr.load();
-				if (p && p->search(key, result))
-					return true;
-			}
 
 			return BTree<K,V>::lookup(key, result);
 
