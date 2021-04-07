@@ -11,25 +11,6 @@
 
 using namespace btreeolc;
 
-template<class T>
-struct Versioned {
-	T val;
-	long version;
-
-	Versioned() = default;
-	Versioned(const T v, const long ver) : val(v), version(ver) {}
-	Versioned(const Versioned<T> &other) = default;
-	Versioned(Versioned<T> &&other) = default;
-	void operator=(const Versioned<T> &other) {
-		if (other.version > this->version) {
-			val = other.val;
-			version = other.version;
-		}
-	}
-	void operator=(const Versioned<T> &&other) = delete;
-			
-
-};
 
 template<class K, class V>
 class RingBufferedBTree : public BTree<K, Versioned<V>> {
@@ -55,7 +36,6 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 				buf[insert_pos].second = val;
 				return false;
 			} else {
-				// buffer is full
 				return true;
 			}
 		}
@@ -64,11 +44,13 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 			if (version < min_version)
 				return false;
 			
-			for (int i = std::min(pos.load(), capacity-1); i >= 0; --i) 
+			for (int i = std::min(pos.load()-1, capacity-1); i >= 0; --i) 
 				if (buf[i].first == key) {
 					result = buf[i].second.val;
+					return true;
 				}
-			return true;
+
+			return false;
 		}
 
 		void reset(const long version) {
@@ -87,7 +69,7 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 
 	public:
 
-		RingBufferedBTree() {
+		RingBufferedBTree() : version(1) {
 			BTree<K,Versioned<V>>();
 			last_insert_buffer.fill(nullptr);
 			insert_buffer = insert_buffers.data();
@@ -151,10 +133,13 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 					for (const auto &p : curr_buffer->buf) {
 						BTree<K,Versioned<V>>::insert(p.first, p.second);
 					}
+
 					curr_buffer->reset(version.load());
 					curr_buffer->mu.unlock();
 
-				} 				
+				} 
+				// insert into buffer failed, directly insert instead
+				BTree<K,Versioned<V>>::insert(key, vpayload);
 			}
 			// if the buffer has been swapped, unlock the last buffer that
 			// was inserted into

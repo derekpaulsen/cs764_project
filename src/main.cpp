@@ -146,13 +146,13 @@ int main(int argc, char **argv) {
 	//std::cerr << "ops per second : "<< (long)ops << "\n\n";
 	//}
 
-	//{
-	//std::cerr << "running BufferedBTree\n";
-	//BufferedBTree<long, long> buffered_tree {};
-	//
-	//double ops = execute_workload(buffered_tree, workload);
-	//std::cout << "ops per second : "<< (long)ops << "\n\n";
-	//}
+	{
+	std::cerr << "running BufferedBTree\n";
+	BufferedBTree<long, long> buffered_tree {};
+	
+	double ops = execute_workload(buffered_tree, workload);
+	std::cout << "ops per second : "<< (long)ops << "\n\n";
+	}
 
 	//{
 	//std::cerr << "running IndBufferedBTree\n";

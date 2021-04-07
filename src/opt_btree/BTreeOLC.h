@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <optional>
 #include <iostream>
+#include "Versioned.h"
 
 namespace btreeolc {
 
@@ -132,16 +133,21 @@ struct BTreeLeaf : public BTreeLeafBase {
       unsigned pos=lowerBound(k);
       if ((pos<count) && (keys[pos]==k)) {
 	// Upsert
-	payloads[pos] = p;
+	if constexpr (std::is_same<Payload, Versioned<long>>::value) {
+		payloads[pos].set(p);
+	} else {
+		payloads[pos] = p;
+	}
+
 	return;
       }
       memmove(keys+pos+1,keys+pos,sizeof(Key)*(count-pos));
       memmove(payloads+pos+1,payloads+pos,sizeof(Payload)*(count-pos));
       keys[pos]=k;
-      payloads[pos]=p;
+      payloads[pos] = p;
     } else {
       keys[0]=k;
-      payloads[0]=p;
+      payloads[0] = p;
     }
     count++;
   }
@@ -185,11 +191,6 @@ struct BTreeLeaf : public BTreeLeafBase {
 		payloads[current_pos] = temp_payloads[indexes[count-1]];
 		count = current_pos+1;
 
-	//	if (!std::is_sorted(keys, keys + count)) {
-	//		std::cerr << "Keys not sorted!";
-	//		for (int i = 0; i < count; ++i)
-	//			std::cerr << keys[i] << ' ';
-	//		std::cerr << '\n';
 
 	//	}
 		return keys[current_pos];
@@ -210,15 +211,9 @@ struct BTreeLeaf : public BTreeLeafBase {
 		keys[pos] = k;
 		payloads[pos] = p;
 
-		//if (!std::is_sorted(keys, keys + count)) {
-		//	std::cerr << "Keys not sorted!";
-		//	for (int i = 0; i < count; ++i)
-		//		std::cerr << keys[i] << ' ';
-		//	std::cerr << '\n';
-
-		//}
 	}
 };
+
 
 struct BTreeInnerBase : public NodeBase {
    static const PageType typeMarker=PageType::BTreeInner;
