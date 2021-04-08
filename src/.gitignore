@@ -1,2 +1,5 @@
 .ccls-cache
 workload/*.txt
+debug
+vanilla
+static_1
