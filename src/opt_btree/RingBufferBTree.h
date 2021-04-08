@@ -20,7 +20,7 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 
 
 	struct InsertBuffer {
-		static constexpr long capacity = max_threads * capacity_per_thread;
+		static constexpr long capacity = 1024;
 		std::shared_mutex mu;
 		std::atomic<long> pos;
 		long min_version;
@@ -40,13 +40,11 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 			}
 		}
 
-		bool search(K key, V &result, const long version) {
-			if (version < min_version)
-				return false;
+		bool search(K key, Versioned<V> &result) {
 			
 			for (int i = std::min(pos.load()-1, capacity-1); i >= 0; --i) 
 				if (buf[i].first == key) {
-					result = buf[i].second.val;
+					result = buf[i].second;
 					return true;
 				}
 
@@ -153,16 +151,31 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 		
 		bool lookup(const K key, V &result) {
 			// FIXME this is incorrect;
-			long curr_version = version.load();
-			auto *buf = insert_buffer.load();
-			if (buf && buf->search(key, result, curr_version))
-				return true;
+			bool found = false;
+			Versioned<V> vres, r;
+			vres.version = -1;
 
-			Versioned<V> vres;
-			if (BTree<K,Versioned<V>>::lookup(key, vres)) {
+			long curr_version = version.load();
+			auto *insert_buf = insert_buffer.load();
+			if (insert_buf && insert_buf->search(key, vres))
+				found = true;
+
+			for (auto &buf : insert_buffers) {
+				if (buf.search(key, r) && r.version <= curr_version) {
+						vres.set(r);
+						found = true;
+				}
+			}
+
+			if (BTree<K,Versioned<V>>::lookup(key, r) && r.version <= curr_version) {
+				vres.set(r);
+				found = true;
+			}
+			if (found) {
 				result = vres.val;
 				return true;
+			} else {
+				return false;
 			}
-			return false;
 		}
 };
