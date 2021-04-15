@@ -144,6 +144,8 @@ int main(int argc, char **argv) {
 	
 	double ops = execute_workload(tree, workload);
 	std::cerr << "ops per second : "<< (long)ops << "\n\n";
+	std::cout << "{\"algor\":\"baseline\",\"workload\":\"" << fname << 
+		"\", \"ops_per_sec\":" << ops << ",\"num_threads\":" << omp_get_max_threads() << "}\n";
 	}
 
 	//{
@@ -173,7 +175,10 @@ int main(int argc, char **argv) {
 	RingBufferedBTree<long, long> ring_buffer_tree {};
 	
 	double ops = execute_workload(ring_buffer_tree, workload);
-	std::cout << "ops per second : "<< (long)ops << "\n\n";
+	std::cerr << "ops per second : "<< (long)ops << "\n\n";
+
+	std::cout << "{\"algor\":\"RingBufferedBTree\",\"workload\":\"" << fname << 
+		"\", \"ops_per_sec\":" << ops << ",\"num_threads\":" << omp_get_max_threads() << "}\n";
 	}
 	return 0;
 }
