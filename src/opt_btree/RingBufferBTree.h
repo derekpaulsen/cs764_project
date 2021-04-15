@@ -15,7 +15,7 @@ using namespace btreeolc;
 template<class K, class V>
 class RingBufferedBTree : public BTree<K, Versioned<V>> {
 	public:
-		static constexpr int max_threads = 12;
+		static constexpr int max_threads = 32;
 		static constexpr int capacity_per_thread = 256;
 
 
