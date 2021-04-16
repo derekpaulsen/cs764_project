@@ -1,7 +1,6 @@
 #!/usr/bin/fish
 
 set -l num_reps 5
-set -l 
 
 for f in (ls ./workload)
 	echo "running $f"
@@ -11,7 +10,7 @@ for f in (ls ./workload)
 
 		for j in (seq $num_reps)
 			echo -n "."
-			#./vanilla ./workload/$f
+			./vanilla ./workload/$f 1>> res.json
 		end
 		echo "done"
 	end
