@@ -40,6 +40,20 @@ def generate_rand_insert(n):
 
     write_out(df, 'rand_insert.txt')
 
+def generate_rand_insert_with_hc_read(n, nreads):
+
+    df = pd.DataFrame({
+        'key' : np.repeat(np.random.randint(RAND_MIN, RAND_MAX, n), 2)
+    })
+    df['type'] = INSERT
+    df['type'].loc[df.index % 2 == 1] = READ
+
+    if nreads < n:
+        # remove some reads
+        drop_reads =df.loc[df['type'] == READ].sample(n=n-nreads).index
+        df.drop(index=drop_reads, inplace=True)
+
+    write_out(df, 'rand_insert_with_hc_read.txt')
 
 def generate_seq_insert_with_hc_read(n, nreads):
     df = pd.DataFrame({
