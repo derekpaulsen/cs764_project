@@ -58,6 +58,7 @@ def plot_err(df, exp, algors):
     ax.set_title(exp)
     ax.set_xlabel('# Threads')
     ax.set_ylabel('M ops/sec')
+    fig.savefig(f'{exp}.png', bbox_inches='tight')
 
 
     plt.show()
