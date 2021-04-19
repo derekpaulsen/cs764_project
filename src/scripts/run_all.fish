@@ -10,7 +10,10 @@ for f in (ls ./workload)
 
 		for j in (seq $num_reps)
 			echo -n "."
-			./vanilla ./workload/$f 1>> res.json
+			timeout 5m ./vanilla ./workload/$f 1>> res.json
+			if test $status != 0
+				echo 'TIMED OUT'
+			end
 		end
 		echo "done"
 	end
