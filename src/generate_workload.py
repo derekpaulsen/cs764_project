@@ -76,9 +76,10 @@ def generate_rand_insert_with_read(n, nreads):
 
 
 def main(args):
-    generate_seq_insert(args.n)
-    generate_rand_insert(args.n)
-    generate_seq_insert_with_hc_read(args.n, args.nreads)
+    #generate_seq_insert(args.n)
+    #generate_rand_insert(args.n)
+    #generate_seq_insert_with_hc_read(args.n, args.nreads)
+    generate_rand_insert_with_hc_read(args.n, args.nreads)
     # TODO impl and uncomment
     #generate_rand_insert_with_read(args.n, args.nreads)
 
