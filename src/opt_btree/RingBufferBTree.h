@@ -178,4 +178,14 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 				return false;
 			}
 		}
+
+		void release_locks() {
+			int tnum = omp_get_thread_num();
+
+			if (last_insert_buffer[tnum]) {
+				// unlock the last buffer that was inserted into
+				last_insert_buffer[tnum]->mu.unlock_shared();
+				last_insert_buffer[tnum] = nullptr;
+			}
+		}
 };

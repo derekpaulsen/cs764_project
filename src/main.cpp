@@ -93,22 +93,29 @@ template<typename K, typename V, template <typename, typename> class T>
 double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
 	auto start = std::chrono::high_resolution_clock::now();
 	// run in parallel with omp
-#ifndef NO_OMP
-	#pragma omp parallel for schedule(OMP_MODE)
-#endif
-	for (size_t i = 0; i < ops.size(); i++) {
-		const Operation &op = ops[i];
-		const long k = op.get_key();
-		long v;
+	std::atomic<size_t> curr_op = 0;
 
-		switch (op.get_op_type()) {
-			case Operation::INSERT:
-				tree.insert(k, k);
-				break;
-			case Operation::READ:
-				bool success = tree.lookup(k, v);
-				break;
-		};
+	#pragma omp parallel
+	{
+		size_t i;
+		while ((i = curr_op++) < ops.size()) {
+			const Operation &op = ops[i];
+			const long k = op.get_key();
+			long v;
+
+			switch (op.get_op_type()) {
+				case Operation::INSERT:
+					tree.insert(k, k);
+					break;
+				case Operation::READ:
+					bool success = tree.lookup(k, v);
+					break;
+			};
+		}
+
+		if constexpr( std::is_same< T<K,V>, RingBufferedBTree<long, long> >::value) {
+			tree.release_locks();
+		}
 	}
     auto finish = std::chrono::high_resolution_clock::now();
 	auto s = std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start).count();
