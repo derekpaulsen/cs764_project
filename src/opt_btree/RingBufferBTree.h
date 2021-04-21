@@ -160,6 +160,7 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 			bool found = false;
 			Versioned<V> vres, r;
 			vres.version = -1;
+			r.version = -1;
 
 			long curr_version = version.load();
 			auto *insert_buf = insert_buffer.load();
