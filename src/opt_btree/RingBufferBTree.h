@@ -29,25 +29,26 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 		InsertBuffer() : mu(), buf(), pos(0), min_version(0) {
 		}
 
-		bool push_back(K key, const Versioned<V> &val) {
+		bool push_back(K key, V val, std::atomic<long> *version) {
 			long insert_pos = pos++;
 			if (insert_pos < capacity) {
 				buf[insert_pos].first = key;
-				buf[insert_pos].second = val;
+				buf[insert_pos].second.val = val;
+				buf[insert_pos].second.version = version->fetch_add(1);
 				return false;
 			} else {
 				return true;
 			}
 		}
 
-		bool search(K key, Versioned<V> &result) {
-			
-			for (int i = std::min(pos.load()-1, capacity-1); i >= 0; --i) 
-				if (buf[i].first == key) {
+		bool search(K key, Versioned<V> &result, const long max_version) {
+			int end = std::min(pos.load(), capacity);
+			for (int i = 0; i < end; ++i) {
+				if (buf[i].first == key && buf[i].second.version <= max_version) {
 					result = buf[i].second;
 					return true;
 				}
-
+			}
 			return false;
 		}
 
@@ -77,7 +78,6 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 		
 		void insert(K key, V payload) {
 			int tnum = omp_get_thread_num();
-			Versioned<V> vpayload (payload, version++);
 
 			start_insert:
 			InsertBuffer *curr_buffer;
@@ -102,7 +102,7 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 					goto start_insert;
 				}
 			}
-			if (curr_buffer->push_back(key, vpayload)) {
+			if (curr_buffer->push_back(key, payload, &version)) {
 
 				if (last_insert_buffer[tnum]) {
 					last_insert_buffer[tnum]->mu.unlock_shared();
@@ -136,6 +136,7 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 					curr_buffer->mu.unlock();
 
 				} 
+				Versioned<V> vpayload (payload, version++);
 				// insert into buffer failed, directly insert instead
 				BTree<K,Versioned<V>>::insert(key, vpayload);
 			}
@@ -157,11 +158,11 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 
 			long curr_version = version.load();
 			auto *insert_buf = insert_buffer.load();
-			if (insert_buf && insert_buf->search(key, vres))
+			if (insert_buf && insert_buf->search(key, vres, curr_version))
 				found = true;
 
 			for (auto &buf : insert_buffers) {
-				if (buf.search(key, r) && r.version <= curr_version) {
+				if (buf.search(key, r, curr_version)) {
 						vres.set(r);
 						found = true;
 				}
