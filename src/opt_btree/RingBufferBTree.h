@@ -22,8 +22,7 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 	struct InsertBuffer {
 		static constexpr long capacity = 1024;
 		std::shared_mutex mu;
-		std::atomic<long> pos;
-		long min_version;
+		std::atomic<long> pos, min_version;
 		std::array<std::pair<K,Versioned<V>>, capacity> buf;
 		
 		InsertBuffer() : mu(), buf(), pos(0), min_version(0) {
@@ -44,10 +43,11 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 		bool search(K key, Versioned<V> &result, const long max_version) {
 			bool found = false;
 			int end = std::min(pos.load(), capacity);
+			long min_version = this->min_version.load();
 			for (int i = 0; i < end; ++i) {
 				if (buf[i].first == key &&
 						buf[i].second.version <= max_version &&
-						buf[i].second.version >= min_version.load()) {
+						buf[i].second.version >= min_version) {
 					
 					result.set(buf[i].second);
 					found = true;
