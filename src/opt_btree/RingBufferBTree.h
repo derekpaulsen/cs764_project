@@ -52,6 +52,8 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 			for (int i = 0; i < end; ++i) {
 				if (buf[i].first == key) {
 					long curr_min_version = min_version.load();
+					// strictly greater than because the version number gets incremented
+					// at least once before this buffer is resued
 					if( buf[i].second.version <= max_version &&
 						buf[i].second.version > curr_min_version) {
 
@@ -184,7 +186,7 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 				}
 			}
 
-			if (BTree<K,Versioned<V>>::lookup(key, r) && r.version <= curr_version) {
+			if (BTree<K,Versioned<V>>::lookup(key, r)) {
 				vres.set(r);
 				found = true;
 			}
