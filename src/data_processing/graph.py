@@ -7,7 +7,8 @@ SCALE = 1000000
 WORKLOAD_REP = {
     './workload/rand_insert.txt' : 'Random Insert',
     './workload/seq_insert.txt' : 'Sequential Insert',
-    './workload/seq_insert_with_hc_read.txt' : 'Sequential Insert with High Conflict Read'
+    './workload/seq_insert_with_hc_read.txt' : 'Sequential Insert with High Conflict Read',
+    './workload/rand_insert_with_hc_read.txt' : 'Random Insert with High Conflict Read'
 }
 
 ALGOR_REP= {
