@@ -1,6 +1,6 @@
 .PHONY: workload test clean
 
-CXX = g++-11 -std=c++20 -O3 -Wno-invalid-offsetof -mcx16 -DNDEBUG
+CXX = g++-11 -std=c++20 -O3 -Wno-invalid-offsetof -mcx16 -DNDEBUG 
 LIBS =  -fopenmp -lpthread -latomic -ltcmalloc_minimal
 
 FILES = main.cpp ./opt_btree/*

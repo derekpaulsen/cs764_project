@@ -15,40 +15,58 @@ using namespace btreeolc;
 template<class K, class V>
 class RingBufferedBTree : public BTree<K, Versioned<V>> {
 	public:
-		static constexpr int max_threads = 12;
+		static constexpr int max_threads = 32;
 		static constexpr int capacity_per_thread = 256;
 
 
 	struct InsertBuffer {
 		static constexpr long capacity = 1024;
 		std::shared_mutex mu;
-		std::atomic<long> pos;
-		long min_version;
+		std::atomic<long> pos, min_version;
 		std::array<std::pair<K,Versioned<V>>, capacity> buf;
 		
 		InsertBuffer() : mu(), buf(), pos(0), min_version(0) {
 		}
 
-		bool push_back(K key, const Versioned<V> &val) {
-			long insert_pos = pos++;
+		bool push_back(K key, V val, std::atomic<long> *version) {
+			long insert_pos = pos.fetch_add(1, std::memory_order_relaxed);
 			if (insert_pos < capacity) {
 				buf[insert_pos].first = key;
-				buf[insert_pos].second = val;
+				buf[insert_pos].second.val = val;
+				buf[insert_pos].second.version = version->fetch_add(1, std::memory_order_release);
 				return false;
 			} else {
 				return true;
 			}
 		}
 
-		bool search(K key, Versioned<V> &result) {
-			
-			for (int i = std::min(pos.load()-1, capacity-1); i >= 0; --i) 
-				if (buf[i].first == key) {
-					result = buf[i].second;
-					return true;
-				}
+		bool search(K key, Versioned<V> &result, const long max_version) {
+			bool found = false;
 
-			return false;
+			int end = std::min(pos.load(std::memory_order_relaxed), capacity);
+			long start_min_version;
+			if (!end || ((start_min_version = min_version.load()) >= max_version)) {
+				return false;
+			}
+
+			for (int i = 0; i < end; ++i) {
+				if (buf[i].first == key) {
+					long curr_min_version = min_version.load();
+					// strictly greater than because the version number gets incremented
+					// at least once before this buffer is resued
+					if( buf[i].second.version <= max_version &&
+						buf[i].second.version > curr_min_version) {
+
+						result.set(buf[i].second);
+						found = true;
+					} 
+					// ensure read was valid
+					if (start_min_version != min_version.load()) {
+						return false;
+					}
+				}
+			}
+			return found;
 		}
 
 		void reset(const long version) {
@@ -77,12 +95,11 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 		
 		void insert(K key, V payload) {
 			int tnum = omp_get_thread_num();
-			Versioned<V> vpayload (payload, version++);
 
 			start_insert:
 			InsertBuffer *curr_buffer;
 			// grab the next valid buffer		
-			while (!(curr_buffer = this->insert_buffer.load()))
+			while (!(curr_buffer = this->insert_buffer.load(std::memory_order_relaxed)))
 				insert_buffer.wait(nullptr);
 
 			if (curr_buffer != last_insert_buffer[tnum]) {
@@ -102,14 +119,14 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 					goto start_insert;
 				}
 			}
-			if (curr_buffer->push_back(key, vpayload)) {
+			if (curr_buffer->push_back(key, payload, &version)) {
 
 				if (last_insert_buffer[tnum]) {
 					last_insert_buffer[tnum]->mu.unlock_shared();
 					last_insert_buffer[tnum] = nullptr;
 				}
 
-				if (insert_buffer.compare_exchange_strong(curr_buffer, nullptr)) {
+				if (insert_buffer.compare_exchange_strong(curr_buffer, nullptr, std::memory_order_relaxed)) {
 					// this thread has to insert everything 
 					//
 					// find next open insert buffer
@@ -132,16 +149,17 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 						BTree<K,Versioned<V>>::insert(p.first, p.second);
 					}
 
-					curr_buffer->reset(version.load());
+					curr_buffer->reset(version.load(std::memory_order_consume));
 					curr_buffer->mu.unlock();
 
 				} 
+				Versioned<V> vpayload (payload, version.fetch_add(1, std::memory_order_release));
 				// insert into buffer failed, directly insert instead
 				BTree<K,Versioned<V>>::insert(key, vpayload);
 			}
 			// if the buffer has been swapped, unlock the last buffer that
 			// was inserted into
-			if (last_insert_buffer[tnum] && last_insert_buffer[tnum] != insert_buffer.load()) {
+			if (last_insert_buffer[tnum] && last_insert_buffer[tnum] != insert_buffer.load(std::memory_order_relaxed)) {
 				// unlock the last buffer that was inserted into
 				last_insert_buffer[tnum]->mu.unlock_shared();
 				last_insert_buffer[tnum] = nullptr;
@@ -150,24 +168,25 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 		}
 		
 		bool lookup(const K key, V &result) {
-			// FIXME this is incorrect;
+			long curr_version = version.load(std::memory_order_consume);
+
 			bool found = false;
 			Versioned<V> vres, r;
 			vres.version = -1;
+			r.version = -1;
 
-			long curr_version = version.load();
-			auto *insert_buf = insert_buffer.load();
-			if (insert_buf && insert_buf->search(key, vres))
+			auto *insert_buf = insert_buffer.load(std::memory_order_relaxed);
+			if (insert_buf && insert_buf->search(key, vres, curr_version))
 				found = true;
 
 			for (auto &buf : insert_buffers) {
-				if (buf.search(key, r) && r.version <= curr_version) {
+				if (buf.search(key, r, curr_version)) {
 						vres.set(r);
 						found = true;
 				}
 			}
 
-			if (BTree<K,Versioned<V>>::lookup(key, r) && r.version <= curr_version) {
+			if (BTree<K,Versioned<V>>::lookup(key, r)) {
 				vres.set(r);
 				found = true;
 			}
@@ -176,6 +195,16 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 				return true;
 			} else {
 				return false;
+			}
+		}
+
+		void release_locks() {
+			int tnum = omp_get_thread_num();
+
+			if (last_insert_buffer[tnum]) {
+				// unlock the last buffer that was inserted into
+				last_insert_buffer[tnum]->mu.unlock_shared();
+				last_insert_buffer[tnum] = nullptr;
 			}
 		}
 };
