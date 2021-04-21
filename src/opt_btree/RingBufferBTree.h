@@ -42,12 +42,17 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 
 		bool search(K key, Versioned<V> &result, const long max_version) {
 			bool found = false;
+
 			int end = std::min(pos.load(), capacity);
-			long min_version = this->min_version.load();
+
+			if (!end || min_version.load() >= max_version) {
+				return false;
+			}
+
 			for (int i = 0; i < end; ++i) {
 				if (buf[i].first == key &&
 						buf[i].second.version <= max_version &&
-						buf[i].second.version >= min_version) {
+						buf[i].second.version > min_version.load()) {
 					
 					result.set(buf[i].second);
 					found = true;
@@ -155,7 +160,6 @@ class RingBufferedBTree : public BTree<K, Versioned<V>> {
 		}
 		
 		bool lookup(const K key, V &result) {
-			// FIXME this is incorrect;
 			bool found = false;
 			Versioned<V> vres, r;
 			vres.version = -1;
