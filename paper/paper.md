@@ -6,9 +6,9 @@ B-Trees are one of the most widely used data structures in database systems,
 used to index data from a variety of sources. As servers running RDBMS's have
 increased the number of processors available, the demand for data structures
 that can support concurrent operations has increased along with it. Many
-extensions of B-Trees have been proposed that minimize locking (**FIXME** e.g.
-Latch Coupling, B<sup>link</sup>-Link Trees) or eliminate locking completely
-(**FIXME** e.g. Bw-Trees) to improve concurrency. While these methods have
+extensions of B-Trees have been proposed that minimize locking (e.g.
+Latch Coupling [4], B<sup>link</sup>-Link Trees [5], Optimistic Lock Coupling [1]) or eliminate locking completely
+(e.g. Bw-Trees [2]) to improve concurrency. While these methods have
 greatly increased to concurrent throughput over baseline locking algorithms,
 concurrent sequential key inserts are still problematic for many algorithms,
 and lead to greatly reduced throughput compared to other workloads.  In this
@@ -64,8 +64,9 @@ locking for writes that would normally be high contention.  To do this we
 propose a two step solution when handling inserts into the B-Tree. When
 inserting, we first put the insert into an unordered buffer. Once the buffer
 fills, the buffer is replaced with another buffer from a preallocated pool
-and a thread is assigned to flush the buffer into
-the tree using repeated inserts into the B-Tree.
+and a thread is assigned to flush the buffer into the tree using repeated inserts into the B-Tree.
+We choose to use a B-Tree with Optimistic Lock Coupling since [3] 
+showed that of the B-Tree, it performed the best of the B-Trees tested.
 
 
 ### Insert Buffer
@@ -84,17 +85,22 @@ while the getting the insert position is atomic, writing to the buffer is not. B
 the lock synchronization this is not an issue when the buffer is flushed but could potenially be
 an issue when the buffer read, we address this issue below.
 
-'''c++
-
-'''
+```c++
+struct InsertBuffer {
+	static constexpr long capacity = 1024;
+	std::shared_mutex mu;
+	std::atomic<long> pos, min_version;
+	std::array< std::pair<K, Versioned<V> >, capacity> buf;
+}
+```
 
 
 ### Ordering of Inserts
 
 While unordered buffers make concurrent inserts easy, it can lead to 
-unintuitive behavior. Say we have a thread **t1** performing inserts into a *unique* B-Tree. 
-**t1** inserts pair (*k*, *v1*) into buffer *B1*. *B1* then fills and is assigned to another 
-thread to be flushed. **t1** then inserts pair (*k*, *v2*) into buffer *B2*. 
+unintuitive behavior. Say we have a thread *t1* performing inserts into a *unique* B-Tree. 
+*t1* inserts pair (*k*, *v1*) into buffer *B1*. *B1* then fills and is assigned to another 
+thread to be flushed. *t1* then inserts pair (*k*, *v2*) into buffer *B2*. 
 *B2* then fills and is assigned to another thread to be flushed. If the thread 
 inserting *B1* stalls, *B2* could be flushed before *B1* meaning that it would be possible 
 for the B-Tree to contain (*k*, *v1*)! In fact, we cannot guarentee any sort of consistency for
@@ -109,6 +115,34 @@ Specifically, when we insert into the B-Tree, if the key already exists in the
 tree we check the version numbers of the payloads and store the payload 
 with the greater version number. 
 
+```python
+# version is a shared atomic counter 
+def insert(key, payload):
+	restart:
+
+	current_buffer = get_current_buffer()
+	# try locking the buffer for inserts
+	if not current_buffer.is_locked_by_this_thread():
+		release_shared_locks()
+		if not current_bufffer.try_lock_shared():
+			goto restart
+	# buffer is full
+	if current_buffer.insert(key, payload, &version) == FAILURE:
+		release_shared_locks()
+		# try to take ownership and flush
+		if current_buffer.take_ownership():
+			replace_insert_buffer()
+			# wait for other theads to finish inserts
+			current_buffer.lock_exclusive()
+			for k,p in current_buffer:
+				 btree.insert(k, p)
+			# clear buffer, update minimum version, and unlock
+			current_buffer.reset(version)
+			current_buffer.unlock_exclusive()
+		# tag payload
+		versioned_payload = Versioned(payload, version++)
+		btree.insert(key, versioned_payload)
+```
 <!--- add example code for insert
 
 latch == lock
@@ -160,7 +194,8 @@ retrived and store. Next, we iterate through the buffer pool, looking for buffer
 If a buffer is currently being flushed, we search it and if the key is found, and the read is valid, the payload is retrived and 
 stored. Finally, we search the B-Tree, if the key is found, we retrive the payload and store it. Finally, 
 we return the payload that has the greatest version number. Searching in this order ensures that any 
-insert, buffered or visible in the tree is always found, since 
+insert, buffered or visible in the tree is always found, since any operation performed 
+which is not found in the buffers will be visible in the B-Tree. 
 
 
 
@@ -181,7 +216,7 @@ For each test a worker thread would fetch and operation to do, perform the
 operation and then fetch the next operation to be done. That is, the operations
 a particular thread does during the experiment are not determined a priori.
 This explains the drastic difference of our experimental results when compared
-with **TODO add open btree paper citation**, where the authors interleaved the
+with [3], where the authors interleaved the
 operations by assigning each thread an equal portion of operations a priori in
 a round-robin fashion (e.g. if there are 2 threads, each thread is assigned
 every other operation before workload execution begins).  We dynamically assign
@@ -215,13 +250,16 @@ algorithms tested.
 
 
 ## Sources 
+[1] Leis, Viktor et al. “Optimistic Lock Coupling: A Scalable and Efficient General-Purpose Synchronization Method.” IEEE Data Eng. Bull. 42 (2019): 73-84.
 
+[2] J. J. Levandoski, D. B. Lomet and S. Sengupta, "The Bw-Tree: A B-tree for new hardware platforms," 2013 IEEE 29th International Conference on Data Engineering (ICDE), 2013, pp. 302-313, doi: 10.1109/ICDE.2013.6544834.
+
+[3] Ziqi Wang, Andrew Pavlo, Hyeontaek Lim, Viktor Leis, Huanchen Zhang, Michael Kaminsky, and David G. Andersen. 2018. Building a Bw-Tree Takes More Than Just Buzz Words. In <i>Proceedings of the 2018 International Conference on Management of Data</i> (<i>SIGMOD '18</i>). Association for Computing Machinery, New York, NY, USA, 473–488. DOI:https://doi.org/10.1145/3183713.3196895
+
+[4] Goetz Graefe. 2011. Modern B-Tree Techniques. <i>Found. Trends databases</i> 3, 4 (April 2011), 203–402. DOI:https://doi.org/10.1561/1900000028
+
+[5] Philip L. Lehman and s. Bing Yao. 1981. Efficient locking for concurrent operations on B-trees. <i>ACM Trans. Database Syst.</i> 6, 4 (Dec. 1981), 650–670. DOI:https://doi.org/10.1145/319628.319663
 <!-- need 
-OLC paper
-Open BW-Tree Paper
-B-Tree survey 
-BW-Tree paper from microsoft
-
 
 MassTree paper?
 ART Tree paper?
