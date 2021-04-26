@@ -6,10 +6,15 @@ SCALE = 1000000
 
 WORKLOAD_REP = {
     './workload/rand_insert.txt' : 'Random Insert',
-    './workload/seq_insert.txt' : 'Sequential Insert',
-    './workload/seq_insert_with_hc_read.txt' : 'Sequential Insert with High Conflict Read',
-    './workload/rand_insert_with_hc_read.txt' : 'Random Insert with High Conflict Read'
+    './workload/seq_insert.txt' : 'Tail Insert',
+    './workload/seq_insert_with_hc_read.txt' : 'Tail Insert with Read',
+    './workload/rand_insert_with_hc_read.txt' : 'Random Insert with Read'
 }
+
+PAIRS = [
+('Random Insert', 'Tail Insert'),
+('Random Insert with Read', 'Tail Insert with Read')
+]
 
 ALGOR_REP= {
         'baseline' : 'Baseline',
@@ -31,7 +36,7 @@ def create_pt(d):
 
 
 def create_pts(grp):
-    print(grp)
+    #print(grp)
     return grp.groupby('num_threads')\
             .apply(lambda x : create_pt(x.describe()))
 
@@ -55,6 +60,7 @@ def plot_err(df, exp, algors):
         pts = create_pts(df.loc[a])
         print(pts)
         add_err_line(ax, pts, a)
+
     ax.legend()
     ax.set_title(exp)
     ax.set_xlabel('# Threads')
@@ -65,6 +71,26 @@ def plot_err(df, exp, algors):
     plt.show()
 
 
+def plot_err_2(df, exps, algors):
+
+
+    fig, axes = plt.subplots(nrows=len(exps), sharex=True)
+    for ax, exp in zip(axes, exps):
+        for a in algors:
+            pts = create_pts(df.loc[exp,a])
+            print(pts)
+            add_err_line(ax, pts, a)
+
+        ax.legend()
+        ax.set_title(exp)
+        ax.set_ylabel('M ops/sec')
+
+        ax.set_xlabel('# Threads')
+    fig.tight_layout()
+    fig.savefig(f'{exp} 2.png')
+
+
+    plt.show()
 def main(fname):
     df = pd.read_json(fname, lines=True)
     df['workload'] = df['workload'].replace(WORKLOAD_REP)
@@ -75,8 +101,11 @@ def main(fname):
 
     df = df.set_index(['workload', 'algor'])
 
-    for wl in workloads:
-        plot_err(df, wl, algors)
+    #for wl in workloads:
+    #    plot_err(df, wl, algors)
+
+    for p in PAIRS:
+        plot_err_2(df, p, algors)
 
 if __name__ == '__main__':
     main(sys.argv[1])
