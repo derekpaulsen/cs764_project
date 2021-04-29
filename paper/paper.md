@@ -4,46 +4,47 @@ Derek Paulsen
 ----
 
 B-Trees are one of the most common data structures in database systems, used to
-index data for nearly any kind of data that is stored. As the number of
-cores and memory available in servers running DBMS's have increased, the
-demand for data structures that can support effeciently concurrent operations
-has grown exponentially.  Simple locking based methods for concurrency control
-in B-Trees, such as locking the entire tree, or the path to the node that is
-being read or modified, quickly become a bottleneck in multithreaded workloads
-in servers with large main memories.  Many extensions of B-Trees have been
-proposed that minimize locking (e.g.  Latch Coupling [4], B<sup>link</sup>-Link
-Trees [5], Optimistic Lock Coupling [1]) or eliminate locking completely (e.g.
-Bw-Trees [2]) to improve concurrency. While these methods have greatly
-increased to concurrent throughput over baseline locking algorithms, concurrent
-tail inserts are still problematic for many algorithms, and lead to greatly
-reduced throughput compared to other workloads. In this paper we examine the
-problem of tail inserts and propose a solution that extends a B-Tree Optimistic
-Lock Coupling to reduce contention between threads and improve throughput of
-this challenging workload.
+index nearly any kind of data. As the number of cores and memory available in
+servers running DBMS's have increased, the demand for data structures that can
+support efficiently concurrent operations has grown exponentially.  Simple
+locking based methods for concurrency control in B-Trees, such as locking the
+entire tree, or the path to the node that is being read or modified, quickly
+become a bottleneck in multithreaded workloads in servers with large main
+memories.  Many extensions of B-Trees have been proposed that minimize locking
+(e.g.  Latch Coupling [4], B<sup>link</sup>-Link Trees [5], Optimistic Lock
+Coupling [1]) or eliminate locking completely (e.g.  Bw-Trees [2]) to improve
+concurrency. While these methods have greatly increased to concurrent
+throughput over baseline locking algorithms, concurrent tail inserts are still
+problematic for many algorithms, and lead to greatly reduced throughput
+compared to other workloads. In this paper we examine the problem of tail
+inserts and propose a solution that extends a B-Tree Optimistic Lock Coupling
+to reduce contention between threads and improve throughput of this challenging
+workload.
 
 ## Background
 
-B-Tree indexes have been used in database systems for well over 50 years
-dating back to System R, where B-Trees where the only index supported. Since then,
-the number of cores per processor and the size of RAM has increased greatly. Where
-in the past a B-Tree would need to be stored partially on disk, it is now feasible that 
-for certain applications the entire B-Tree could be stored in main memory. By storing 
-the B-Tree in main memory, disk I/O is no longer a bottleneck, instead the concurrency 
-control mechanisms, which were performant enough for previous architectures, have no become
-the main bottleneck.  Many extensions to B-Trees have been proposed and
-imlemented including Latch Coupling [4], B<sup>link</sup>-Link Trees [5], Optimistic Lock Coupling [1],
-and Bw-Trees [2]. While these methods have increased the concurrent throughput of
-B-Trees over baseline solutions (e.g. locking the entire tree, or locking the path to the leaf node), concurrent tail inserts
-into B-Trees still pose a significant problem to many algorithms, which collapse under the
-contention of the workload or require such heavy weight contention regulating mechanisms that 
-they are not viable for general use. 
+B-Tree indexes have been used in database systems for well over 50 years dating
+back to System R, where B-Trees where the only index supported. Since then, the
+number of cores per processor and the size of RAM has increased significantly. Where
+in the past a B-Tree would need to be stored partially on disk, it is now
+feasible that for some applications the entire B-Tree could be stored in
+main memory. In multithreaded servers with large main memories, disk I/O is no longer a 
+bottleneck, instead the concurrency control mechanisms, which were performant
+enough for previous architectures, have now become the main bottleneck.  Many
+extensions to B-Trees have been proposed and implemented including Latch
+Coupling [4], B<sup>link</sup>-Link Trees [5], Optimistic Lock Coupling [1],
+and Bw-Trees [2]. While these methods have increased the concurrent throughput
+of B-Trees over baseline solutions (e.g. locking the entire tree, or locking
+the path to the leaf node), concurrent tail inserts into B-Trees still pose a
+significant problem to many algorithms, which collapse under high contention. 
 
-In this paper we will examine the problem of concurrent tail inserts into B-Trees and the 
-current apporaches for dealing with the issues associated with such workloads. We will
-start by reviewing related work on B-Trees. Next discuss the problem in depth, why it is 
-an issue and where it might arise. We then propose a solution and give preliminary 
-experimental results to show its effectiveness in dealing the with the problem. Finally,
-we will discuss our finds and suggest directions for future research. 
+In this paper we will examine the problem of concurrent tail inserts into
+B-Trees and the current approaches for dealing with the issues associated with
+such workloads. We will start by reviewing related work on B-Trees. Next
+discuss the problem in depth, why it is an issue and where it might arise. We
+then propose a solution and give preliminary experimental results to show its
+effectiveness in dealing the with the problem. Finally, we will discuss our
+finds and suggest directions for future research. 
 
 
 ## Related Work
@@ -52,36 +53,39 @@ we will discuss our finds and suggest directions for future research.
 
 Bw-Trees [2] are a form of lock-free B-Tree which uses delta chains to optimize
 writes to the tree developed by Microsoft in 2013. The core idea behind
-Bw-Trees is to allow writes to proceed in a lock-free fashion via the use of
-delta chains and periodically resolve writes. This algorithm essentially
-trades-off write speed for read speed since writes can proceed in parallel at
-the cost of reads require resolving previous writes to get the current version
-of the tree. A comprehensive comparison of Bw-Trees with other B-Tree and B-Tree-like indexes was done by
-[3], in their experiments Bw-Trees were significantly slower than B-Trees with
-OLC on all workloads, hence we don't consider them any further.
+Bw-Trees is to allow concurrent writes to occur without locks via the use of
+delta chains and periodically resolve writes. This algorithm trades write speed
+for read speed since writes can proceed in parallel at the cost of reads
+require resolving previous writes to get the current version of the tree. A
+comprehensive comparison of Bw-Trees with other B-Tree and B-Tree-like indexes
+was done by [3], in their experiments Bw-Trees were significantly slower than
+B-Trees with OLC on all workloads, hence we don't consider them any further.
 
 ### B-Tree with OLC
 
-Lock coupling has long been used as a concurrency control mechanism on top of 
-B-Trees, however it has the issue that, especially for low contention workloads, 
-it performs a lot of unnecessary locking. To remedy this, optimistic lock coupling (OLC)
-replaces read locks with version numbers. Instead of acquiring a read lock on a node, the 
-thread reads a version number, which, after reading data in the node, is validated by the 
-thread. If the version number has changed (i.e. the node has been modified) the read procedure
-restarts from the beginning, else the read continues. In their evaluation [3] found that a
-B-Tree with OLC was the fastest B-Tree index for concurrent operations, hence we use it 
-as our baseline solution and also backing B-Tree.
+Lock coupling has long been used as a concurrency control mechanism on top of
+B-Trees, however it has the issue that, especially for low contention
+workloads, it performs a lot of unnecessary locking. To remedy this, optimistic
+lock coupling (OLC) replaces read locks with version numbers. Instead of
+acquiring a read lock on a node, the thread reads a version number, which,
+after reading data in the node, is validated by the thread. If the version
+number has changed (i.e. the node has been modified) the read procedure
+restarts from the beginning, else the read continues. In their evaluation [3]
+found that a B-Tree with OLC was the fastest B-Tree index for concurrent
+operations, hence we use it as our baseline solution and also backing B-Tree.
 
 ### Other Tree Like Structures
 
-There are many other tree-like data structures that have been developed for use in databases such as 
-MassTrees and ART. While [3] did show that some of these algorithms (in particular ART), can greatly out
-perform B-Tree data structures, they are more appropriate to classify as trie's or a combination of a 
-trie and a B-Tree. We find these solutions interesting, we have choosen to focus on optimizing 
-B-Trees for tail inserts, not creating a new data structure. We have choosen this focus because
-B-Trees are far more common than trie's in current database systems, meaning that a solution
-that adapts B-Trees will likely be much easier to integrate into existing systems than a completely 
-new data structure.
+There are many other tree-like data structures that have been developed for use
+in memory databases such as MassTrees and Adaptive Radix Trees (ART). While [3]
+did show that some of these algorithms (in particular ART), can greatly out
+perform B-Tree data structures, they are more appropriate to classify as trie's
+or a combination of a trie and a B-Tree. We find these solutions interesting,
+we have chosen to focus on optimizing B-Trees for tail inserts, not creating a
+new data structure. We have chosen this focus because B-Trees are far more
+common than trie's in current database systems, meaning that a solution that
+adapts B-Trees will likely be much easier to integrate into existing systems
+than a completely new data structure.
 
 <!--- Talk about ART, MassTrees. However we don't include this since we are confining out discussion
 to B+-Trees since our solution can be used largely as a drop in replacement for current B-Trees -->
@@ -102,7 +106,7 @@ between concurrent modifications should be low. On the other hand, for a B-Tree
 however this is workload is very problematic. Because the order ids are
 monotonically increasing, all concurrent threads will be inserting into the
 right most leaf of the tree (i.e. a tail insert). For algorithms that take
-locks to perform updates, the throughput of operations will quickly degrad
+locks to perform updates, the throughput of operations will quickly degrade
 since all threads need to take the same lock to insert the order.  Of course it
 is possible to randomly select order ids, turning the sequential inserts into a
 random inserts, however you loose the ability to quickly iterate over the
@@ -125,9 +129,9 @@ solution when handling inserts into the B-Tree. When inserting, we first put
 the (key, value) pair into an unordered buffer. Once the buffer fills, the
 buffer is replaced with another buffer from a preallocated pool and a thread is
 assigned to flush the buffer into the tree using repeated inserts into the
-B-Tree.  This approach has the distinct advantage that it is compeletely
+B-Tree.  This approach has the distinct advantage that it is completely
 separate from the underlying B-Tree implementation. That is, this solution can
-be placed on top of any existing B-Tree algorithm with essentailly no
+be placed on top of any existing B-Tree algorithm with essentially no
 modification.  For our backing B-Tree implementation we choose to use a B-Tree
 with Optimistic Lock Coupling since [3] showed that, it was the best performing
 B-Tree implementation. 
@@ -248,7 +252,7 @@ from the buffers we must first explain the notion of a *valid* buffer read. We
 say that a read is *valid* if the version number of a payload is greater than
 the minimum version number of the buffer, less than or equal to the
 maximum version number of the read, and the minimum version number of the 
-buffer hasn't changed since the start of the read. *Valid* buffer reads are guarenteed to reflect an 
+buffer hasn't changed since the start of the read. *Valid* buffer reads are guaranteed to reflect an 
 actual insert into the tree. The first potential issue performing a read is reading
 stale data since the buffers are recycled. To prevent this, we maintain a minimum version 
 number for each buffer, which, when updated, marks all values in the buffer as 
@@ -348,13 +352,31 @@ search along with the B-Tree itself.
 
 ### Optimize Flushing Buffers
 
-Astute readers will likely have noticed that buffered writes could be flushed 
+Astute readers will likely have noticed that buffered writes could be flushed
 to the tree in a more efficient way. Specifically, one could traverse the tree
-and insert some or all of the buffered writes into the appropriate node(s), 
-without having to traverse the tree from the root for each write. This would likely greatly increase the throughput
-of tail inserts and could possibly help with random inserts by avoid some cache misses. 
-This optimization, while simple to state, is not easy to implement, hence we 
-defer it to future research to explore implementations of bulk writing optimizations.
+and insert some or all of the buffered writes into the appropriate node(s),
+without having to traverse the tree from the root for each write. This would
+likely greatly increase the throughput of tail inserts and could possibly help
+with random inserts by avoid some cache misses.  This optimization, while
+simple to state, is not easy to implement, hence we defer it to future research
+to explore implementations of bulk writing optimizations.
+
+
+### Other operations 
+
+Our evaluation only considers insert and read operations, of course 
+there are more operations that a B-Tree is used for is many systems. 
+In particular, future work should examine delete and range scan operations.
+For the later we note that our buffering implementation can be generalized 
+from storing (key, value) pairs to store (key, value, operation) triples, where 
+operation could be insert, delete, or any other operation that might be performed
+on data in the B-Tree (e.g. append to a list). 
+Deletes are particularly interesting for the buffering strategy since it 
+may allow for completely omitting operations on the B-Tree if there is an
+insert and delete operation on the same key in a single buffer. 
+
+
+<!-- add discussion of range scans  and deletes -->
 
 ### Contention Regulation vs. Workload
 
@@ -401,6 +423,7 @@ No Free Lunch
 [4] Goetz Graefe. 2011. Modern B-Tree Techniques. <i>Found. Trends databases</i> 3, 4 (April 2011), 203–402. DOI:https://doi.org/10.1561/1900000028
 
 [5] Philip L. Lehman and s. Bing Yao. 1981. Efficient locking for concurrent operations on B-trees. <i>ACM Trans. Database Syst.</i> 6, 4 (Dec. 1981), 650–670. DOI:https://doi.org/10.1145/319628.319663
+
 <!-- need 
 
 MassTree paper?
