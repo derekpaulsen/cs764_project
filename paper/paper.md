@@ -29,8 +29,8 @@ B-Tree indexes have been used in database systems for well over 50 years,
 dating back to System R [8], where B-Trees where the only index supported.
 Since then, the number of cores per processor and the size of RAM have
 increased significantly. Where in the past a B-Tree would need to be stored
-partially on disk, it is now feasible that for many applications, the entire
-B-Tree can be stored entirely in main memory. In multithreaded servers with
+partially on disk, it is now feasible that for many applications to have the entire
+B-Tree be stored in main memory. In multithreaded servers with
 large main memories, disk I/O is no longer a bottleneck, instead the
 concurrency control mechanisms, which were performant enough for previous
 architectures, have now become a bottleneck.  Many extensions to B-Trees
@@ -43,12 +43,12 @@ problem to these and other algorithms, which can collapse under high
 contention. 
 
 In this paper we will examine the problem of concurrent tail inserts into
-B-Trees and the current algorithms for concurrency control in B-Trees. We will
+B-Trees and current algorithms for concurrency control in B-Trees. We will
 start by reviewing related work on B-Trees. Next we discuss the problem of tail
-inserts in depth, why it is an issue, and where it might arise. We then propose
+inserts, why it is an issue, and where it might arise. We then propose
 a solution and give preliminary experimental results to show its effectiveness
 in dealing the with the problem. Finally, we will discuss our findings and suggest
-directions for future research. 
+directions for future work. 
 
 
 ## 2 Related Work
@@ -74,7 +74,7 @@ lock coupling (OLC) replaces read locks with version numbers. Instead of
 acquiring a read lock on a node, the thread reads a version number, which,
 after reading data in the node, is validated by the thread. If the version
 number has changed (i.e. the node has been modified) the read procedure
-restarts from the beginning, else the read continues. In their evaluation, Ziqi Wang et al. [3],
+restarts from the beginning, else the read continues. In their evaluation, Ziqi Wang et al. [3]
 found that a B-Tree with OLC was the fastest B-Tree index for concurrent
 operations, hence we use it as our baseline solution and the B-Tree which we build our 
 solution on top of.
@@ -104,7 +104,7 @@ Consider the following workflow,
 2. The server gets the next order id (monotonically increasing) and adds additional information about the order 
 3. The server then inserts the completed order into the database and then notifies the customer that the order is placed
 
-In this scenario it is likely that the order ids will be indexed, as they make
+In this scenario it is likely that the order ids will be indexed since they make
 an ideal primary key. For a hash index, such a workflow is not an issue since a
 good hashing algorithm will randomly distribute the keys and thus contention
 between concurrent modifications should be low. For a B-Tree on the other hand, 
@@ -131,9 +131,9 @@ B-Tree implementations. The key observation is that most algorithms breakdown
 when there are many concurrent writers on the same leaf of the tree, due to
 locking for writes. The main goal of our solution is to get rid of locking for
 writes that would normally be high contention.  To do this, we propose a two
-step solution when handling inserts into the B-Tree. When performing an insert,
+step solution when handling inserts into the B-Tree. To perform an insert,
 we first put the (key, value) pair into an unordered buffer. Once the buffer
-fills, the buffer is replaced with another buffer from a preallocated pool and
+fills, the buffer is replaced with an empty buffer from a preallocated pool and
 a thread is assigned to flush the buffer into the tree using repeated inserts
 into the B-Tree.  This approach has the distinct advantage that it is
 completely separate from the underlying B-Tree implementation. That is, this
@@ -151,7 +151,7 @@ B-Tree with unique keys.  *t1* inserts pair (*k*, *v1*) into buffer *B1*.
 inserts pair (*k*, *v2*) into buffer *B2*.  *B2* then fills and is assigned to
 another thread to be flushed. If the thread inserting *B1* stalls, *B2* could
 be flushed before *B1* meaning that it would be possible for the B-Tree to
-contain (*k*, *v1*). In fact, we cannot guarantee any sort of consistency for
+contain (*k*, *v1*) after the workload completes. In fact, we cannot guarantee any sort of consistency for
 the B-Tree at any point since buffers can be flushed in any order. Clearly this
 behavior is not acceptable for many applications.
 
@@ -264,7 +264,7 @@ read is reading stale data since the buffers are recycled. To prevent this, we
 maintain a minimum version number for each buffer, which, when updated, marks
 all values in the buffer as invalid. The next potential issue with reading from
 the buffers is torn writes.  As mentioned above, writes into the buffers are
-*not* atomic, this means that a thread could read an updated key with a payload
+*not* atomic, this means that a thread could read an updated key with a payload from
 another write or read an updated payload with a key from another write. To
 prevent this, the threads synchronize on the version number, this ensures that
 if a thread reads data with a version number less than or equal to the maximum
@@ -279,7 +279,7 @@ hence the key will be found in the B-Tree.
 
 
 To perform a read, we first load the current version number (without
-incrementing). Next we get the current insert buffer and search it for the
+incrementing). Next, we get the current insert buffer and search it for the
 key. If the key is found and the read is valid, the payload is retrieved and store.
 Next, we iterate through the buffer pool, looking for buffers that are
 currently being flushed. If a buffer is currently being flushed, we search it
@@ -398,7 +398,7 @@ to explore implementations of bulk writing optimizations.
 ### 7.2 Other operations 
 
 Our evaluation only considers insert and read operations, of course there are
-more operations that a B-Tree is used for is many systems. In particular,
+more operations that a B-Tree is used for in many systems. In particular,
 future work should examine delete and range scan operations. For the later we
 note that our buffering implementation can be generalized from storing (key,
 value) pairs to storing (key, value, operation) triples, where operation could be
