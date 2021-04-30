@@ -7,13 +7,16 @@ SCALE = 1000000
 WORKLOAD_REP = {
     './workload/rand_insert.txt' : 'Random Insert',
     './workload/seq_insert.txt' : 'Tail Insert',
-    './workload/seq_insert_with_hc_read.txt' : 'Tail Insert with Read',
-    './workload/rand_insert_with_hc_read.txt' : 'Random Insert with Read'
+    './workload/seq_insert_with_hc_read.txt' : 'Tail Insert with Read (50M insert, 10M read)',
+    './workload/rand_insert_with_hc_read.txt' : 'Random Insert with Read (50M insert, 10M read)',
+    './workload/seq_insert_with_hc_read_50_50.txt' : 'Tail Insert with Read (50M insert, 50M read)',
+    './workload/rand_insert_with_hc_read_50_50.txt' : 'Random Insert with Read (50M insert, 50M read)'
 }
 
 PAIRS = [
 ('Random Insert', 'Tail Insert'),
-('Random Insert with Read', 'Tail Insert with Read')
+('Random Insert with Read (50M insert, 10M read)', 'Tail Insert with Read (50M insert, 10M read)'),
+('Random Insert with Read (50M insert, 50M read)', 'Tail Insert with Read (50M insert, 50M read)'),
 ]
 
 ALGOR_REP= {
@@ -74,7 +77,7 @@ def plot_err(df, exp, algors):
 def plot_err_2(df, exps, algors):
 
 
-    fig, axes = plt.subplots(nrows=len(exps), sharex=True)
+    fig, axes = plt.subplots(nrows=len(exps))
     for ax, exp in zip(axes, exps):
         for a in algors:
             pts = create_pts(df.loc[exp,a])
@@ -84,6 +87,7 @@ def plot_err_2(df, exps, algors):
         ax.legend()
         ax.set_title(exp)
         ax.set_ylabel('M ops/sec')
+        ax.set_xticks([4,8,12,16,20,24,28,32])
 
         ax.set_xlabel('# Threads')
     fig.tight_layout()
