@@ -48,7 +48,12 @@ def generate_rand_insert_with_hc_read(n, nreads):
     df['type'] = INSERT
     df['type'].loc[df.index % 2 == 1] = READ
 
-    write_out(df, 'rand_insert_with_hc_read_50_50.txt')
+    if nreads < n:
+        # remove some reads
+        drop_reads =df.loc[df['type'] == READ].sample(n=n-nreads).index
+        df.drop(index=drop_reads, inplace=True)
+
+    write_out(df, 'rand_insert_with_hc_read.txt')
 
 def generate_rand_insert_with_hc_read_50(n):
 
@@ -58,12 +63,8 @@ def generate_rand_insert_with_hc_read_50(n):
     df['type'] = INSERT
     df['type'].loc[df.index % 2 == 1] = READ
 
-    if nreads < n:
-        # remove some reads
-        drop_reads =df.loc[df['type'] == READ].sample(n=n-nreads).index
-        df.drop(index=drop_reads, inplace=True)
 
-    write_out(df, 'rand_insert_with_hc_read.txt')
+    write_out(df, 'rand_insert_with_hc_read_50_50.txt')
 
 def generate_seq_insert_with_hc_read(n, nreads):
     df = pd.DataFrame({
@@ -99,10 +100,8 @@ def main(args):
     #generate_rand_insert(args.n)
     #generate_seq_insert_with_hc_read(args.n, args.nreads)
     #generate_rand_insert_with_hc_read(args.n, args.nreads)
-    generate_seq_insert_with_hc_read_50(args.n)
+    #generate_seq_insert_with_hc_read_50(args.n)
     generate_rand_insert_with_hc_read_50(args.n)
-    # TODO impl and uncomment
-    #generate_rand_insert_with_read(args.n, args.nreads)
 
 if __name__ == '__main__':
     main(argp.parse_args(sys.argv[1:]))

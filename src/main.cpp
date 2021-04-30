@@ -121,12 +121,13 @@ double execute_workload(T<K,V> &tree, const std::vector<Operation> &ops) {
 	auto s = std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start).count();
 	std::cerr << "total time : " << s << " nanoseconds\n";
 
-	std::cerr << "Verifying results...";
-	bool pass = verify(tree, ops);
-	if (pass)
-		std::cerr << "ok\n";
-	else
-		std::cerr << "FAILED\n";
+	std::cerr << "skipping verifying\n"; 
+	//std::cerr << "Verifying results...";
+	//bool pass = verify(tree, ops);
+	//if (pass)
+	//	std::cerr << "ok\n";
+	//else
+	//	std::cerr << "FAILED\n";
 
 	return ops.size() * 1000000000 / s;
 }
